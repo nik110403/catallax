@@ -27,7 +27,7 @@
 // the same row.
 import { useEffect, useRef, useState, useId } from "react";
 
-import { ApiError, notifyUnauthorized } from "../api/client";
+import { ApiError, notifyUnauthorized, readOnlyDemoError } from "../api/client";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
 import { PanelHead } from "./PanelHead";
@@ -84,6 +84,8 @@ const DETAIL_CODE_MESSAGES: Record<string, string> = {
 async function notesFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${NOTES_API}${path}`, init);
   if (!res.ok) {
+    const ro = await readOnlyDemoError(res, init?.method ?? "GET");
+    if (ro) throw ro;
     let code = "ERROR";
     let message = res.statusText;
     try {

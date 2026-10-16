@@ -20,7 +20,7 @@
 // `JournalTimeline.tsx` imports this module for its own reads.
 import { useId, useRef, useState } from "react";
 
-import { ApiError, notifyUnauthorized } from "../api/client";
+import { ApiError, notifyUnauthorized, readOnlyDemoError } from "../api/client";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
 import { PanelHead } from "./PanelHead";
@@ -73,6 +73,8 @@ export interface JournalForecastSummary {
 async function journalFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${JOURNAL_API}${path}`, init);
   if (!res.ok) {
+    const ro = await readOnlyDemoError(res, init?.method ?? "GET");
+    if (ro) throw ro;
     let code = "ERROR";
     let message = res.statusText;
     try {

@@ -97,6 +97,33 @@ export class ApiError extends Error {
   }
 }
 
+// Hosted read-only demo: the backend answers every non-GET /api/v1 request with
+// 403 {"error":"read_only_demo"}, and the edge proxy may answer writes with a
+// bare 405. Both surface as one quiet "read-only demo" ApiError so every caller
+// that shows `e.message` gets the same low-emphasis line, with no per-site code.
+// Reacts to the response only — no server-fetched demo flag.
+export const READ_ONLY_DEMO_CODE = "read_only_demo";
+export const READ_ONLY_DEMO_MESSAGE = "read-only demo";
+
+export function isReadOnlyDemoError(e: unknown): boolean {
+  return e instanceof ApiError && e.code === READ_ONLY_DEMO_CODE;
+}
+
+// Call at the top of a failed (!res.ok) branch. Reads a clone, so the caller's
+// own body parsing is unaffected. Returns null for every other failure.
+export async function readOnlyDemoError(res: Response, method: string): Promise<ApiError | null> {
+  if (method.toUpperCase() === "GET") return null;
+  let hit = res.status === 405;
+  if (!hit && res.status === 403) {
+    try {
+      hit = (await res.clone().json())?.error === READ_ONLY_DEMO_CODE;
+    } catch {
+      /* non-JSON 403 → ordinary forbidden */
+    }
+  }
+  return hit ? new ApiError(READ_ONLY_DEMO_CODE, READ_ONLY_DEMO_MESSAGE, res.status) : null;
+}
+
 // Fires when any request below gets a 401 — lets the app flip to the locked
 // state mid-session (the share-gate cookie expired) without every caller
 // checking status codes itself (Phase 14a). Not used by login()/logout()
@@ -149,6 +176,8 @@ async function post<T>(path: string): Promise<T> {
   }
   const res = await fetch(API + path, { method: "POST" });
   if (!res.ok) {
+    const ro = await readOnlyDemoError(res, "POST");
+    if (ro) throw ro;
     let code = "ERROR";
     let message = res.statusText;
     try {
@@ -172,6 +201,8 @@ async function del<T>(path: string): Promise<T> {
   }
   const res = await fetch(API + path, { method: "DELETE" });
   if (!res.ok) {
+    const ro = await readOnlyDemoError(res, "DELETE");
+    if (ro) throw ro;
     let code = "ERROR";
     let message = res.statusText;
     try {
@@ -199,6 +230,8 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
+    const ro = await readOnlyDemoError(res, "POST");
+    if (ro) throw ro;
     let code = "ERROR";
     let message = res.statusText;
     try {
@@ -242,6 +275,8 @@ async function putJson<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
+    const ro = await readOnlyDemoError(res, "PUT");
+    if (ro) throw ro;
     let code = "ERROR";
     let message = res.statusText;
     try {
@@ -269,6 +304,8 @@ async function postNoBody(path: string, body?: unknown): Promise<void> {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
+    const ro = await readOnlyDemoError(res, "POST");
+    if (ro) throw ro;
     let code = "ERROR";
     let message = res.statusText;
     try {

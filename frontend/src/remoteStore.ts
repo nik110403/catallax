@@ -2,7 +2,9 @@
 // GET/PUT /api/v1/layouts/{key}: a key→JSON store so workspaces + layout presets
 // follow the user across devices. localStorage stays the synchronous source of
 // truth for first paint and the offline fallback; this layer hydrates from and
-// writes through to the backend. Writes are debounced; failures are swallowed
+// writes through to the backend. In the hosted read-only demo the PUT is
+// answered 403 read_only_demo (or a bare 405): nothing here reacts to that, so
+// layouts stay local to the browser with no rollback and no error shown. Writes are debounced; failures are swallowed
 // (offline → localStorage still holds the state).
 
 import { notifyUnauthorized } from "./api/client";
