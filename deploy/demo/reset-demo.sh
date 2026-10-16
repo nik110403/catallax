@@ -29,6 +29,12 @@ DEMO_DENY_MARKERS_FILE="$(env_val DEMO_DENY_MARKERS_FILE)"
 export DEMO_DENY_MARKERS_FILE
 "$HERE/preflight-demo.sh"
 
+# Build before anything is torn down: the one-shot demo-seed runs code baked into the
+# image (`python -m app.demo_seed`), so an image older than the checkout fails with
+# "No module named app.demo_seed" (exit 1). Cached layers make this a no-op when nothing
+# changed; a failed build exits here, before the trap, and leaves the running stack alone.
+"$DC" build
+
 # Until the write probe has passed, any failure takes the stack down: a stack
 # that is not provably read-only must not serve. After that, only warm can fail
 # and the (read-only) stack stays up with whatever the caches hold.
@@ -36,6 +42,11 @@ LOCKED=0
 cleanup() {
   rc=$?
   if [ "$rc" -ne 0 ] && [ "$LOCKED" -ne 1 ]; then
+    # The containers (and their logs) die with `down`, so print the evidence first.
+    for svc in demo-seed demo-warm notes-mount-init fastapi-backend; do
+      echo "reset-demo: ---- logs: $svc (last 80) ----" >&2
+      "$DC" --profile warm logs --no-color --tail 80 "$svc" >&2 || true
+    done
     echo "reset-demo: failed (exit $rc) before the read-only check passed; taking the stack down" >&2
     "$DC" down || true
   fi

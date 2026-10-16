@@ -44,7 +44,7 @@ deploy/demo/compose.sh build
 deploy/demo/reset-demo.sh
 ```
 
-`reset-demo.sh` is the whole nightly sequence: `down`, remove the two stateful
+`reset-demo.sh` is the whole nightly sequence: `build` (so the one-shot `demo-seed` never runs an image older than the checkout; a failed build leaves the running stack alone), `down`, remove the two stateful
 volumes (a volume that still exists afterwards fails the reset and the trap takes the stack down), `up` (read-only, default flags, never unlocked), a write probe, then the
 warm job. The probe POSTs to `/api/v1/watchlist` from inside the backend
 container (`compose.sh exec fastapi-backend`, its own port 8000, so no extra

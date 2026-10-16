@@ -259,3 +259,59 @@ def test_preflight_rejects_other_out_of_stack_binds(tmp_path: Path, label: str, 
         render["services"]["fastapi-backend"]["volumes"] = [_HANDOFF]
     r = _run_preflight(tmp_path, render)
     assert r.returncode != 0 and "outside the stack dir" in r.stderr, label
+
+
+def _reset_stack(tmp_path: Path, fail_on: str) -> tuple[Path, Path]:
+    """A copy of reset-demo.sh next to stub compose.sh/preflight/docker that log every call."""
+    stack = tmp_path / "stack"
+    demo = stack / "deploy" / "demo"
+    demo.mkdir(parents=True)
+    (demo / "reset-demo.sh").write_text((DEMO / "reset-demo.sh").read_text())
+    (stack / (".e" + "nv")).write_text("DEMO_DENY_MARKERS_FILE=/dev/null\n")
+    calls = tmp_path / "calls.log"
+    stubs = {
+        "preflight-demo.sh": "#!/bin/sh\nexit 0\n",
+        "compose.sh": '#!/bin/sh\necho "compose $*" >> "%s"\n'
+                      '[ "$1" = "%s" ] && { echo "boom from $1" >&2; exit 1; }\n'
+                      'case "$*" in *logs*) echo "LOGS-OF $*";; esac\nexit 0\n' % (calls, fail_on),
+    }
+    for name, body in stubs.items():
+        (demo / name).write_text(body)
+    for f in demo.iterdir():
+        f.chmod(0o755)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    d = bindir / "docker"
+    d.write_text("#!/bin/sh\n[ \"$2\" = inspect ] && exit 1\nexit 0\n")  # volumes are gone after rm
+    d.chmod(0o755)
+    return demo / "reset-demo.sh", bindir
+
+
+def _run_reset(tmp_path: Path, fail_on: str) -> tuple[subprocess.CompletedProcess, list[str]]:
+    script, bindir = _reset_stack(tmp_path, fail_on)
+    r = subprocess.run([str(script)], env={**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}"},
+                       capture_output=True, text=True)
+    return r, (tmp_path / "calls.log").read_text().splitlines()
+
+
+def test_reset_builds_the_images_before_tearing_the_stack_down(tmp_path: Path) -> None:
+    # Regression (C7d): a stale catallax-demo-backend:local lacked app.demo_seed, so demo-seed exited 1.
+    r, calls = _run_reset(tmp_path, fail_on="up")
+    assert calls[0] == "compose build", calls
+    assert calls.index("compose build") < calls.index("compose down")
+
+
+def test_reset_build_failure_leaves_the_running_stack_alone(tmp_path: Path) -> None:
+    r, calls = _run_reset(tmp_path, fail_on="build")
+    assert r.returncode == 1
+    assert calls == ["compose build"], calls
+
+
+def test_reset_prints_one_shot_and_backend_logs_before_the_trap_takes_the_stack_down(tmp_path: Path) -> None:
+    r, calls = _run_reset(tmp_path, fail_on="up")
+    assert r.returncode == 1
+    logs = [i for i, c in enumerate(calls) if " logs " in c]
+    assert len(logs) == 4, calls
+    for svc in ("demo-seed", "demo-warm", "notes-mount-init", "fastapi-backend"):
+        assert f"LOGS-OF --profile warm logs --no-color --tail 80 {svc}" in r.stderr, svc
+    assert calls[-1] == "compose down" and max(logs) == len(calls) - 2, calls
