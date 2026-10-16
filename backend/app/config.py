@@ -718,6 +718,8 @@ class Settings(BaseSettings):
     openbb_fred_api_key: str | None = None
     # Release calendar goes to FRED directly (one call) because OpenBB's fred
     # calendar provider fans out per-release requests and reliably times out.
+    # Own (longer) timeout: the releases/dates call is slow from some hosts; 20 s timed out on the demo host.
+    fred_http_timeout: float = 60.0
     fred_releases_dates_url: str = "https://api.stlouisfed.org/fred/releases/dates"
 
     # ── Net worth source: Wealthfolio (portfolio) ────────

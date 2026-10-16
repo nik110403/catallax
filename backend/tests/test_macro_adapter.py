@@ -187,3 +187,49 @@ async def test_a_13k_point_daily_history_is_cached_whole(monkeypatch: pytest.Mon
     assert len(env.data.points) == 13000
     cached = redis.kv["macro:series:T10Y2Y:toya"]
     assert len(MacroSeries.model_validate_json(cached).points) == 13000
+
+
+# ── calendar: diagnostics, own timeout, cache-only semantics ───────────────
+def _cal_adapter(redis, *, mode: str, key: str | None) -> MacroAdapter:
+    return MacroAdapter(redis=redis, settings=Settings(
+        postgres_user="u", postgres_password="p", postgres_db="d", redis_password="r",
+        upstream_mode=mode, openbb_fred_api_key=key))
+
+
+async def test_calendar_uses_own_timeout_and_logs_exception_class(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    seen: dict = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen["params"] = dict(request.url.params)
+        raise httpx.ReadTimeout("")  # str() is empty, like the real one
+
+    real = httpx.AsyncClient
+
+    def _factory(**kw):  # noqa: ANN003
+        seen["timeout"] = kw["timeout"]
+        return real(transport=httpx.MockTransport(_handler))
+
+    monkeypatch.setattr("app.adapters.macro_adapter.httpx.AsyncClient", _factory)
+    a = _cal_adapter(_Redis(), mode="live", key="SECRETKEY")
+    with caplog.at_level("WARNING", logger="catallax.macro"):
+        env = await a.calendar()
+    assert seen["timeout"] == 60.0 and a.settings.openbb_http_timeout != 60.0
+    assert seen["params"]["include_release_dates_with_no_data"] == "true"
+    assert seen["params"]["realtime_start"] <= seen["params"]["realtime_end"]
+    assert "ReadTimeout" in caplog.text and "SECRETKEY" not in caplog.text
+    assert env.data.events == []
+
+
+async def test_calendar_cache_only_miss_raises_upstream_disabled() -> None:
+    from app.upstream import UpstreamDisabled
+
+    a = _cal_adapter(_Redis(), mode="cache-only", key=None)
+    with pytest.raises(UpstreamDisabled):
+        await a.calendar()
+
+
+async def test_calendar_live_without_key_still_says_needs_key() -> None:
+    env = await _cal_adapter(_Redis(), mode="live", key=None).calendar()
+    assert env.data.needs_key is True and env.data.events == []

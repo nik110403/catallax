@@ -76,7 +76,7 @@ def macro_env(monkeypatch: pytest.MonkeyPatch):
         return None
 
     monkeypatch.setattr(MacroAdapter, "_results", _results)
-    monkeypatch.setattr(MacroAdapter, "_client", lambda self: _Client())
+    monkeypatch.setattr(MacroAdapter, "_client", lambda self, timeout=None: _Client())
     monkeypatch.setattr(dw, "_macro_ready", _ready)
     monkeypatch.setattr(dw, "MACRO_RETRY_WAIT_SECONDS", 0.0)
     monkeypatch.setenv("UPSTREAM_MODE", "live")
@@ -181,7 +181,7 @@ def _calendar_with_real_httpx(monkeypatch: pytest.MonkeyPatch) -> None:
         return httpx.Response(200, json={"release_dates": [{"date": "2026-10-20", "release_name": "CPI"}]})
 
     monkeypatch.setattr(MacroAdapter, "_client",
-                        lambda self: httpx.AsyncClient(transport=httpx.MockTransport(_handler)))
+                        lambda self, timeout=None: httpx.AsyncClient(transport=httpx.MockTransport(_handler)))
 
 
 @pytest.fixture

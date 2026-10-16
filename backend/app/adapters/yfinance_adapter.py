@@ -8,6 +8,8 @@ yfinance is a blocking library, so every call to it runs in a worker thread via
 from __future__ import annotations
 
 import asyncio
+import logging
+import math
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -21,8 +23,17 @@ from app.config import Settings
 from app.errors import SymbolNotFound, UpstreamError
 from app.upstream import guard
 
+logger = logging.getLogger("catallax.yfinance")
+
 _YAHOO_SEARCH = "https://query1.finance.yahoo.com/v1/finance/search"
 _UA = "Mozilla/5.0 (catallax)"
+
+
+def _finite(value: object) -> bool:
+    try:
+        return math.isfinite(float(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
 
 
 def _to_decimal(value: object) -> Decimal:
@@ -119,8 +130,14 @@ class YFinanceAdapter(PriceSourceAdapter):
             raise SymbolNotFound(f"No history for symbol {symbol}")
 
         candles: list[Candle] = []
+        dropped = 0
         try:
             for ts, row in frame.iterrows():
+                # Yahoo returns NaN OHLC on partial/not-yet-priced rows (e.g. today's EU session
+                # row): drop those rows rather than failing the whole history.
+                if not all(_finite(row[c]) for c in ("Open", "High", "Low", "Close")):
+                    dropped += 1
+                    continue
                 candles.append(
                     Candle(
                         ts=ts.to_pydatetime(),
@@ -135,6 +152,10 @@ class YFinanceAdapter(PriceSourceAdapter):
             raise UpstreamError(
                 f"yfinance returned an unexpected history shape for {symbol}: {exc}"
             ) from exc
+        if dropped:
+            logger.debug("yfinance %s: dropped %d row(s) with missing/non-finite OHLC", symbol, dropped)
+        if not candles:
+            raise UpstreamError(f"yfinance returned no valid OHLC rows for {symbol}")
         return candles
 
     async def _search(self, query: str) -> list[SymbolMatch]:

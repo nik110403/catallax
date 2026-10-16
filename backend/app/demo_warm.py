@@ -246,7 +246,8 @@ async def warm(redis: Redis, settings: Settings) -> tuple[int, int, int]:
                 core_failed += 1
             else:
                 optional_failed += 1
-            logger.warning("warm %s failed (%s): %s", label, "CORE" if core else "optional", exc)
+            logger.warning("warm %s failed (%s): %s: %s", label, "CORE" if core else "optional",
+                           type(exc).__name__, exc)
 
     chain = build_chain("equity", redis, settings)
     symbols = warm_symbols(settings)

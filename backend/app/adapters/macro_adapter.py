@@ -259,7 +259,7 @@ class MacroAdapter:
                 await self.redis.set(cache_key, payload, ex=self.ttl)
                 await self.redis.set(f"{cache_key}:stale", payload, ex=self._STALE_TTL)
             except Exception as exc:  # caching is best-effort
-                logger.warning("macro cache set failed (%s): %s", cache_key, exc)
+                logger.warning("macro cache set failed (%s): %s: %s", cache_key, type(exc).__name__, exc)
             return data, False, False
         # Upstream returned nothing usable — serve the last good result if we have one.
         stale = await self.redis.get(f"{cache_key}:stale")
@@ -270,9 +270,11 @@ class MacroAdapter:
                 logger.debug("macro stale deserialise failed (%s): %s", cache_key, exc)
         return data, False, False
 
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self, timeout: float | None = None) -> httpx.AsyncClient:
         guard("macro", self.settings)
-        return httpx.AsyncClient(timeout=self.settings.openbb_http_timeout)
+        return httpx.AsyncClient(
+            timeout=self.settings.openbb_http_timeout if timeout is None else timeout
+        )
 
     # ── public API (each returns Envelope[Model]) ──────────────
     async def yield_curve(self, region: str) -> Envelope[YieldCurve]:
@@ -391,7 +393,10 @@ class MacroAdapter:
                         rows = await self._results(client, "/economy/indicators", params)
                     except UpstreamError as exc:
                         # one bad root shouldn't sink the whole board, but log it
-                        logger.warning("macro indicator root %s (%s) failed: %s", root, transform, exc)
+                        logger.warning(
+                            "macro indicator root %s (%s) failed: %s: %s",
+                            root, transform, type(exc).__name__, _redact(exc),
+                        )
                         rows = []
                     # latest value per country for this root
                     latest: dict[str, dict[str, Any]] = {}
@@ -525,6 +530,9 @@ class MacroAdapter:
                         cached, source="fred", cache_hit=not stale, stale=stale,
                         warnings=[_STALE_WARN] if stale else [],
                     )
+            # Cache-only demo with nothing warmed: same snapshot-miss error as the other macro
+            # endpoints, not a misleading "needs a FRED key" (the demo has no key by design).
+            guard("macro", self.settings)
             data = CalendarData(events=[], needs_key=True)
             return Envelope.fresh(
                 data, source="fred", stale=True,
@@ -547,7 +555,7 @@ class MacroAdapter:
             }
             rows: list[dict[str, Any]] = []
             try:
-                async with self._client() as client:
+                async with self._client(self.settings.fred_http_timeout) as client:
                     resp = await client.get(
                         self.settings.fred_releases_dates_url, params=params
                     )
@@ -557,9 +565,9 @@ class MacroAdapter:
             except Exception as exc:
                 failed = True
                 # httpx exception text includes the full URL (and the key) — sanitize.
+                # (type name too: httpx timeouts have an empty str()).
                 logger.warning(
-                    "fred releases/dates failed: %s",
-                    _redact(exc),
+                    "fred releases/dates failed: %s: %s", type(exc).__name__, _redact(exc)
                 )
             events: list[CalendarEvent] = []
             seen: set[tuple[str | None, str]] = set()
