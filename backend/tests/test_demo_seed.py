@@ -1,7 +1,14 @@
 """Sample-artifact seed for the hosted demo (DEMO-SPEC §13): pure builder checks always
 run; the DB-backed checks (idempotence, read gates, reconciliation) need a throwaway
 Postgres with the schema applied and are opt-in via DEMO_SEED_TEST_DB=1 (they WRITE rows),
-so the default suite never touches a database."""
+so the default suite never touches a database.
+
+Running them DELETEs every row of the seeded tables, so a second guard protects real data:
+set DEMO_SEED_TEST_DB_NAME=throwaway_<anything> and point POSTGRES_* at a database of exactly
+that name. The fixture FAILS (never wipes) unless current_database() equals it, the name starts
+with "throwaway_", and it is not a known real name (catallax, catallax_demo, postgres).
+  DEMO_SEED_TEST_DB=1 DEMO_SEED_TEST_DB_NAME=throwaway_seed POSTGRES_DB=throwaway_seed \
+    pytest tests/test_demo_seed.py"""
 from __future__ import annotations
 
 import os
@@ -178,6 +185,21 @@ async def _counts() -> dict[str, int]:
         return {t: (await db.execute(select(func.count()).select_from(getattr(m, t)))).scalar_one() for t in _TABLES}
 
 
+_REAL_DB_NAMES = {"catallax", "catallax_demo", "postgres", "test"}
+
+
+async def _assert_throwaway_db() -> None:
+    """Fail loudly before any DELETE unless the connected DB is the declared throwaway one."""
+    from sqlalchemy import text
+    from app.db import session_scope
+    want = os.environ.get("DEMO_SEED_TEST_DB_NAME", "")
+    async with session_scope() as s:
+        got = (await s.execute(text("select current_database()"))).scalar_one()
+    if not want.startswith("throwaway_") or want in _REAL_DB_NAMES or got != want:
+        pytest.fail(f"refusing to wipe database {got!r}: DEMO_SEED_TEST_DB_NAME={want!r} must start "
+                    "with 'throwaway_', not be a real DB name, and equal current_database()", pytrace=False)
+
+
 @pytest.fixture
 async def db(monkeypatch: pytest.MonkeyPatch):
     import app.models as m
@@ -188,6 +210,7 @@ async def db(monkeypatch: pytest.MonkeyPatch):
     get_settings.cache_clear()
     monkeypatch.setattr("app.redis._redis", _NoRedis())  # PaperBroker.mark -> failed quotes -> avg_cost
     init_engine()
+    await _assert_throwaway_db()
     async with session_scope() as s:
         for t in _TABLES + ("DemoSeedMarker",):
             await s.execute(delete(getattr(m, t)))
