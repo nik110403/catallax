@@ -40,7 +40,7 @@ export DEMO_DENY_MARKERS_FILE
 # and the (read-only) stack stays up with whatever the caches hold.
 LOCKED=0
 cleanup() {
-  rc=$?
+  rc=$?; trap '' TERM INT  # a second signal must not abort the teardown (rc captured first)
   if [ "$rc" -ne 0 ] && [ "$LOCKED" -ne 1 ]; then
     # The containers (and their logs) die with `down`, so print the evidence first.
     for svc in demo-seed demo-warm notes-mount-init fastapi-backend; do

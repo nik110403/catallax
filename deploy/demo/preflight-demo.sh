@@ -159,6 +159,10 @@ for sname, svc in services.items():
                 raise ValueError
         except (TypeError, ValueError):
             bad.append(L("no pids_limit"))
+        lg = svc.get("logging") or {}
+        lo = lg.get("options") or {}
+        if lg.get("driver") != "none" and not (lg.get("driver") == "local" and lo.get("max-size") and str(lo.get("max-file")) == "1"):
+            bad.append(L("logging must be driver none, or local with max-size and max-file 1"))
         if str(svc.get("user", "")).split(":")[0] in ("", "0", "root"):
             bad.append(L("must run as a non-root user"))
     # The demo FRED key: only openbb-data and demo-warm may hold it. Any FRED-named

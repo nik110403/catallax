@@ -14,7 +14,10 @@ flock -w 600 9 || { echo "warm-demo: could not take $STACK/.demo-lock (reset or 
 "$HERE/preflight-demo.sh"
 
 # Stop the sidecar however this ends (warm failure, kill); its own failure never masks the status.
-cleanup() { "$DC" --profile warm rm -sf openbb-data || true; }
+cleanup() {
+  trap '' TERM INT  # a second signal must not abort the teardown
+  "$DC" --profile warm rm -sf openbb-data || true
+}
 trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT

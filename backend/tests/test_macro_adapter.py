@@ -165,3 +165,25 @@ async def test_oversized_payload_is_not_cached(monkeypatch: pytest.MonkeyPatch, 
     with caplog.at_level("WARNING"):
         env = await a.series("CPI.united_states", "toya")
     assert env.data.points and not redis.kv and "macro cache skipped" in caplog.text
+
+
+async def test_a_13k_point_daily_history_is_cached_whole(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Daily FRED history since 1976 (~13k points) must neither be truncated nor hit the byte cap."""
+    import datetime as dt
+
+    from app.adapters.macro_adapter import MacroSeries
+
+    redis = _Redis()
+    a = _live_adapter(redis)
+    a.settings.openbb_fred_api_key = "k"
+    start = dt.date(1976, 1, 1)
+
+    async def _rows(self, client, path, params):  # noqa: ANN001
+        return [{"date": (start + dt.timedelta(days=i)).isoformat(), "value": 1234.5678901234} for i in range(13000)]
+
+    monkeypatch.setattr(MacroAdapter, "_results", _rows)
+    monkeypatch.setattr(MacroAdapter, "_client", lambda self: __import__("contextlib").nullcontext(object()))
+    env = await a.series("T10Y2Y")
+    assert len(env.data.points) == 13000
+    cached = redis.kv["macro:series:T10Y2Y:toya"]
+    assert len(MacroSeries.model_validate_json(cached).points) == 13000

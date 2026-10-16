@@ -51,7 +51,7 @@ def _render() -> dict:
             "redis": _svc(cap_add=["CHOWN", "SETGID", "SETUID"]),
             "demo-warm": _svc(networks={"default": None, "macro-net": None},
                               environment={"OPENBB_FRED_API_KEY": "demo-fred-key", "DEMO_FRED_API_KEY": ""}),
-            "openbb-data": _svc(networks={"macro-net": None}, pids_limit=256, user="10001:10001",
+            "openbb-data": _svc(networks={"macro-net": None}, pids_limit=256, user="10001:10001", logging={"driver": "local", "options": {"max-size": "1m", "max-file": "1"}},
                                 environment={"OPENBB_FRED_API_KEY": "demo-fred-key", "OPENBB_API_PORT": "6900"}),
         },
     }
@@ -266,6 +266,9 @@ def test_preflight_rejects_openbb_data_on_the_default_network_or_with_a_port(tmp
 def test_preflight_requires_pids_limit_and_non_root_on_openbb_data(tmp_path: Path) -> None:
     _fail(tmp_path, lambda r: r["services"]["openbb-data"].pop("pids_limit"), "pids_limit")
     _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(pids_limit=0), "pids_limit")
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].pop("logging"), "logging")
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(logging={"driver": "json-file"}), "logging")
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(logging={"driver": "local", "options": {"max-size": "1m", "max-file": "5"}}), "logging")
     _fail(tmp_path, lambda r: r["services"]["openbb-data"].pop("user"), "non-root")
     _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(user="0:0"), "non-root")
     _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(user="root"), "non-root")

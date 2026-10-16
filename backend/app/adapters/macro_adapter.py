@@ -133,8 +133,8 @@ class CalendarData(BaseModel):
 # Upstream data is untrusted: bound what reaches Redis so a hostile or broken upstream cannot
 # grow the cache or poison it with a copy that no longer validates.
 _MAX_STR = 200
-_MAX_LIST = 5000  # longest legitimate list is ~2y of daily spreads (520) / a multi-decade series
-_MAX_PAYLOAD_BYTES = 512 * 1024
+_MAX_LIST = 20000  # daily FRED history since 1976 is ~13k points (T10Y2Y); never truncate it
+_MAX_PAYLOAD_BYTES = 1024 * 1024  # a 20k-point series serializes to ~920 KB (13k: ~600 KB)
 _API_KEY_RE = re.compile(r"api_key=[^&\s]+")
 
 

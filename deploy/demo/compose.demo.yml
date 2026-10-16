@@ -214,6 +214,10 @@ services:
     mem_limit: 768m
     cpus: 1.0
     pids_limit: 256
+    # OpenBB tracebacks can carry provider URLs with api_key=...: keep the container log tiny.
+    logging:
+      driver: local
+      options: {max-size: "1m", max-file: "1"}
     restart: "no"
 
   # One-shot sample-artifact seed (DEMO-SPEC §13): migrates, then writes the synthetic
