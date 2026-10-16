@@ -19,6 +19,18 @@ paper-trading desk. Everything runs in Docker on your own machine.
 It is deliberately dark, dense and Bloomberg-shaped. The assumption is that you want
 numbers per square inch, not whitespace.
 
+![Home: net worth, market board and regime read](assets/screenshots/home.png)
+
+| | |
+|---|---|
+| ![Portfolio: net worth, allocation, holdings and the ledger](assets/screenshots/portfolio.png) | ![Risk: concentration, VaR, stress tests and FX drag](assets/screenshots/risk.png) |
+| **Portfolio.** Net worth, allocation, holdings and the Beancount ledger. | **Risk.** Concentration, VaR, historical stress tests and FX drag. |
+
+![Backtest: a finished signal-driven run with equity curve, drawdown and signal grades](assets/screenshots/backtest-report.png)
+
+All figures in these screenshots come from the synthetic persona and the sample ledger,
+captured from this repository's own stack.
+
 ## Quick start
 
 ```sh
@@ -29,6 +41,10 @@ docker compose up -d --build
 Open <http://localhost:8090>. The default stack needs no API keys and no paid data. It
 starts with a synthetic portfolio (a stub exporter) and a sample ledger, so every panel
 has something to show on first run.
+
+`bin/seed-demo.sh` (curl and jq) adds demo signals, journal entries, notes, a watchlist and a few
+backtest and lab jobs through the public API. It is idempotent, and the jobs run once the
+`backtest` and `lab` profiles are up.
 
 ## Finding your way around
 
@@ -86,7 +102,7 @@ construction: no broker credentials, no order routing, no wallet signing.
 | Ledger | Personal Beancount files | `data/sample.beancount` |
 | AI features (news enrichment, cockpit, LLM reports) | Claude via local credentials | Disabled by default (`LLM_PROVIDER=noop`); the Claude CLI adapter and skills remain but need local credentials |
 | Hosting, reverse proxy, sync scripts | Self-hosting setup | Removed |
-| Screenshots | — | Omitted for now |
+| Screenshots | — | Captured from this repository's stub stack |
 
 ## Tests
 

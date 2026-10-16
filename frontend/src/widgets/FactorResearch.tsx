@@ -339,6 +339,8 @@ function FactorResearch() {
       .then((r) => setRecent(r.jobs.filter((j) => j.kind === "factor")))
       .catch(() => {});
   };
+  // Load prior runs on mount, not only after a launch.
+  useEffect(refreshRecent, []);
 
   const launch = async () => {
     setLaunching(true);

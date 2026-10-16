@@ -76,6 +76,8 @@ function BacktestLab() {
   const refreshRecent = () => {
     api.listBacktests(8).then((r) => setRecent(r.jobs)).catch(() => {});
   };
+  // Load prior runs on mount, not only after a launch.
+  useEffect(refreshRecent, []);
 
   const launch = async () => {
     if (!sid) return;
