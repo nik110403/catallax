@@ -2,7 +2,7 @@
 
 **A self-hosted financial terminal for one person's money and the markets around it.**
 
-[Quick start](#quick-start) · [Architecture](#architecture) · [Design decisions](#design-decisions) · [Site](https://nikkhosravipour.com)
+[Quick start](#quick-start) · [Architecture](#architecture) · [Design decisions](#design-decisions) · [Case study](CASE-STUDY.md) · [Site](https://nikkhosravipour.com)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-8c2f1b?style=flat)](LICENSE) [![Docs: CC BY 4.0](https://img.shields.io/badge/docs-CC%20BY%204.0-57534e?style=flat)](LICENSE-docs)
 
