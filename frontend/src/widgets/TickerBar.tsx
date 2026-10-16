@@ -18,7 +18,7 @@ import { createPortal } from "react-dom";
 import { ApiError, api } from "../api/client";
 import type { WatchlistItemInput } from "../api/types";
 import { useTicker } from "../api/useTicker";
-import { useDemoMode, DEMO_WRITE_TITLE } from "../demo";
+import { useDemoMode, demoWriteProps } from "../demo";
 import { LOCALE } from "../format";
 import { InlineError } from "./InlineError";
 
@@ -176,7 +176,9 @@ export function TickerBar() {
     );
   }
 
-  const duration = `${items.length * SECONDS_PER_SYMBOL}s`;
+  // Demo hides errored symbols, so only count the cells actually shown.
+  const shown = demo ? items.filter((it) => !ticks[it.symbol.toUpperCase()]?.error).length : items.length;
+  const duration = `${Math.max(1, shown) * SECONDS_PER_SYMBOL}s`;
   const shiftPct = 100 / copies;
   const trackStyle = {
     animationDuration: duration,
@@ -293,7 +295,7 @@ export function TickerBar() {
           aria-haspopup="dialog"
           aria-expanded={editorOpen}
           disabled={demo}
-          title={demo ? DEMO_WRITE_TITLE : undefined}
+          {...demoWriteProps(demo)}
         >
           EDIT
         </button>

@@ -8,7 +8,7 @@ import { useState } from "react";
 
 import { api } from "../api/client";
 import type { BreadthMarket } from "../api/types";
-import { useDemoMode } from "../demo";
+import { NOT_IN_SNAPSHOT, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -143,6 +143,7 @@ export function BreadthBoard() {
   const d = env?.data;
   if (!d) return <PanelState kind="empty" message="no data" />;
 
+  const shownMarkets = d.markets.filter((row) => !demo || row.issues !== null || row.breadth_pct !== null);
   const adSparkData = d.ad_line.filter((p) => p.value !== null);
   const oscColor =
     d.mcclellan_osc === null ? theme.muted : d.mcclellan_osc >= 0 ? theme.up : theme.down;
@@ -195,6 +196,7 @@ export function BreadthBoard() {
             SNAPSHOT{d.session_date ? ` · ${d.session_date}` : ""} · whole-market
           </div>
           {/* maxWidth so the 6-col table stays tight on a full-width widget span */}
+          {demo && shownMarkets.length === 0 ? <PanelState kind="empty" message={NOT_IN_SNAPSHOT} fill /> : (
           <table style={{ width: "100%", maxWidth: 560, borderCollapse: "collapse" }}>
             <thead>
               <tr>
@@ -216,7 +218,7 @@ export function BreadthBoard() {
               </tr>
             </thead>
             <tbody>
-              {d.markets.filter((row) => !demo || row.issues !== null || row.breadth_pct !== null).map((row) => (
+              {shownMarkets.map((row) => (
                 <BreadthRow
                   key={row.market}
                   row={row}
@@ -225,6 +227,7 @@ export function BreadthBoard() {
               ))}
             </tbody>
           </table>
+)}
         </div>
 
         {/* ── Section 2: A/D line + McClellan ── */}

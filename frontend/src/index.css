@@ -120,10 +120,17 @@ body {
   font-size: var(--fs-micro);
   color: var(--muted);
 }
+/* Hosted demo: disabled write controls must read as off even where inline
+   styles paint them in accent/danger colours. */
+body.demo button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed !important;
+  filter: grayscale(0.6);
+}
 .demo-chip {
   letter-spacing: 0.06em;
-  color: var(--accent);
-  border: 1px solid var(--accent);
+  color: var(--muted);
+  border: 1px solid var(--muted);
   border-radius: 3px;
   padding: 1px 6px;
 }

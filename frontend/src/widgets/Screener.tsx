@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { api } from "../api/client";
 import type { ScreenFilters } from "../api/types";
-import { useDemoMode } from "../demo";
+import { NOT_IN_SNAPSHOT, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -101,6 +101,7 @@ function Screener() {
     zIndex: 1,
   };
 
+  const shownRows = sorted.filter((row) => !demo || row.price !== null || row.pe !== null || row.f_score !== null);
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <PanelHead
@@ -197,6 +198,7 @@ function Screener() {
 
       {/* results table */}
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        {demo && d && shownRows.length === 0 ? <PanelState kind="empty" message={NOT_IN_SNAPSHOT} fill /> : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
@@ -220,7 +222,7 @@ function Screener() {
             </tr>
           </thead>
           <tbody>
-            {sorted.filter((row) => !demo || row.price !== null || row.pe !== null || row.f_score !== null).map((row) => (
+            {shownRows.map((row) => (
               <tr key={row.symbol}>
                 <td
                   style={{
@@ -303,6 +305,7 @@ function Screener() {
             ))}
           </tbody>
         </table>
+)}
       </div>
     </div>
   );

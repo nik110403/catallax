@@ -1,7 +1,7 @@
 // Shared loading / empty / error / not-enabled surface for every panel (Phase 14e).
 // One component so copy, spacing and the live-region semantics are fixed in one
 // place — previously this markup was duplicated inline in 39 widgets.
-import { NOT_IN_SNAPSHOT, useDemoMode } from "../demo";
+import { NOT_IN_SNAPSHOT, isSnapshotMiss, useDemoMode } from "../demo";
 import { theme } from "../theme";
 
 // `fill` centers the message and lets it own the whole panel body — for a state
@@ -108,10 +108,21 @@ export function PanelState(props: PanelStateProps) {
   // Hosted demo: a failed fetch means the warm snapshot has no data for this
   // panel, not a fault the visitor can act on — show a muted empty state, not
   // a red error with a Retry. (Outside demo mode nothing changes.)
+  // Only the cache-only upstream rejection means that; any other failure is a
+  // real outage and stays retryable (muted, not red).
   if (demo && props.kind === "error") {
+    const miss = isSnapshotMiss(props.message);
     return (
-      <div className="panel-state" role="status" style={props.fill ? fillStyle : undefined}>
-        {NOT_IN_SNAPSHOT}
+      <div className="panel-state" role="status" title={miss ? undefined : props.message} style={props.fill ? fillStyle : undefined}>
+        {miss ? NOT_IN_SNAPSHOT : "unavailable"}
+        {!miss && props.onRetry && (
+          <button
+            onClick={props.onRetry}
+            style={{ marginLeft: 8, padding: "1px 8px", background: "transparent", border: `1px solid ${theme.border}`, color: theme.muted, borderRadius: 3, fontSize: theme.fontSize.micro, cursor: "pointer" }}
+          >
+            Retry
+          </button>
+        )}
       </div>
     );
   }

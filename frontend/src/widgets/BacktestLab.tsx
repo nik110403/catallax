@@ -8,7 +8,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { BacktestConfigInput, BacktestJob } from "../api/types";
-import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
+import { demoWriteProps, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -178,7 +178,7 @@ function BacktestLab() {
           <button
             onClick={launch}
             disabled={demo || launching || !sid}
-            title={demo ? DEMO_WRITE_TITLE : undefined}
+            {...demoWriteProps(demo)}
             style={{ padding: "5px 14px", background: theme.panelHeader, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 4, cursor: launching || !sid ? "default" : "pointer", fontSize: theme.fontSize.micro }}
           >
             {launching ? "LAUNCHING…" : "RUN BACKTEST"}

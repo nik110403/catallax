@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getSession, onUnauthorized } from "./api/client";
-import { setDemoMode } from "./demo";
+import { DEMO_DESC_ID, DEMO_WRITE_LINE, setDemoMode } from "./demo";
 import type { Session } from "./api/types";
 import { CommandPalette } from "./CommandPalette";
 import { Dashboard, aiSeed, algoSeed, backtestSeed, homeSeed, journalSeed, notesSeed, macroSeed, marketResearchSeed, marketsSeed, personalSeed, quantLabSeed, ratesSeed, reportsSeed, researchSeed, riskSeed, signalsSeed } from "./Dashboard";
@@ -298,6 +298,11 @@ function AppShell({ session }: { session: Session }) {
           </nav>
 
           <span className="app-spacer" />
+          {session.demo_mode && (
+            <span id={DEMO_DESC_ID} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap" }}>
+              {DEMO_WRITE_LINE}
+            </span>
+          )}
           <button className="palette-hint" title="Command palette" onClick={() => setPaletteOpen(true)}>
             {SHORTCUT_LABEL}
           </button>

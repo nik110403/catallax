@@ -16,6 +16,7 @@ const ORIENTATION_KEY = "catallax.orientation.v1";
 // gets its own fixed row below.
 // Demo mode serves a cached snapshot, so "live" copy is reworded there.
 const DEMO_BLURB: Record<string, string> = {
+  portfolio: "A sample portfolio: holdings, allocation, and a risk lens on the whole book.",
   markets: "A cross-asset board, the macro dashboard, rates, and market research — from a data snapshot.",
 };
 
@@ -117,7 +118,7 @@ export function Orientation({
 
         <p className="orientation-note">
           {demoMode
-            ? "These figures are demo data, not actual holdings — and nothing here trades real money. The trading desk is paper-only by construction."
+            ? "These figures are a sample portfolio on a data snapshot, not actual holdings. Actions that write or run jobs are disabled in this demo, and nothing here trades real money — the trading desk is paper-only by construction."
             : "All the data is real — but nothing here trades real money. The trading desk is paper-only by construction."}
         </p>
         <p className="orientation-hint">Press ⌘K / Ctrl+K anywhere to jump straight to a section or widget.</p>

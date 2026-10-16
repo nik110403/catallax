@@ -21,7 +21,7 @@
 import { useId, useRef, useState } from "react";
 
 import { ApiError, notifyUnauthorized, readOnlyDemoError } from "../api/client";
-import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
+import { demoWriteProps, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
 import { PanelHead } from "./PanelHead";
@@ -490,7 +490,7 @@ export function JournalEntryForm({
         <button
           type="button"
           disabled={demo || submitting || !!emitted}
-          title={demo ? DEMO_WRITE_TITLE : undefined}
+          {...demoWriteProps(demo)}
           onClick={() => void submit()}
           style={{
             padding: "6px 14px",

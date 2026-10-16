@@ -4,7 +4,7 @@ import { Fragment, useState } from "react";
 
 import { api } from "../api/client";
 import type { RotationRow } from "../api/types";
-import { useDemoMode } from "../demo";
+import { NOT_IN_SNAPSHOT, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -98,6 +98,8 @@ function RotationBoard() {
     }
     byGroup.get(r.group)!.push(r);
   }
+
+  if (demo && groups.length === 0) return <PanelState kind="empty" message={NOT_IN_SNAPSHOT} fill />;
 
   const th: React.CSSProperties = {
     padding: "3px 5px",

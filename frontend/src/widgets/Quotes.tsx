@@ -5,7 +5,8 @@ import { LOCALE } from "../format";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
-import { useDemoMode } from "../demo";
+import { NOT_IN_SNAPSHOT, useDemoMode } from "../demo";
+import { PanelState } from "./PanelState";
 import type { WidgetProps } from "./registry";
 import { registerWidget } from "./registry";
 
@@ -19,10 +20,12 @@ function Quotes({ config }: WidgetProps<QuotesConfig>) {
   // Colour vs session-baseline (first observed price), so direction persists.
   const base = useRef<Record<string, number>>({});
 
+  const noneShown = demo && config.symbols.length > 0 && config.symbols.every((tok) => ticks[tok.split(":")[0].toUpperCase()]?.error);
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <PanelHead deck={deckLine("quotes")} />
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        {noneShown ? <PanelState kind="empty" message={NOT_IN_SNAPSHOT} fill /> : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <tbody>
             {config.symbols.map((tok) => {
@@ -62,6 +65,7 @@ function Quotes({ config }: WidgetProps<QuotesConfig>) {
             })}
           </tbody>
         </table>
+)}
       </div>
     </div>
   );

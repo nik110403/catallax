@@ -19,7 +19,7 @@ import {
 
 import { ApiError, api, labStreamUrl } from "../api/client";
 import type { Envelope, FactorReport, LabJob } from "../api/types";
-import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
+import { demoWriteProps, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { JobStatus } from "./JobStatus";
@@ -469,7 +469,7 @@ function FactorResearch() {
           <button
             onClick={launch}
             disabled={launching || demo}
-            title={demo ? DEMO_WRITE_TITLE : undefined}
+            {...demoWriteProps(demo)}
             style={{
               padding: "5px 14px",
               background: theme.panelHeader,

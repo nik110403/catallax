@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { READ_ONLY_DEMO_MESSAGE } from "../api/client";
+import { NOT_IN_SNAPSHOT, isSnapshotMiss, useDemoMode } from "../demo";
 import { theme } from "../theme";
 
 // One inline error line for every widget. The hosted read-only demo's write
@@ -15,6 +16,16 @@ export function InlineError({
   variant?: "box" | "text";
   style?: CSSProperties;
 }) {
+  const demo = useDemoMode();
+  if (demo && msg !== READ_ONLY_DEMO_MESSAGE) {
+    // Same rule as PanelState: cache miss vs. genuinely unavailable, both muted.
+    const miss = isSnapshotMiss(msg);
+    return (
+      <div role="status" title={miss ? undefined : msg} style={{ fontSize: theme.fontSize.micro, color: theme.muted, ...style }}>
+        {miss ? NOT_IN_SNAPSHOT : "unavailable"}
+      </div>
+    );
+  }
   if (msg === READ_ONLY_DEMO_MESSAGE) {
     return (
       <div role="status" style={{ fontSize: theme.fontSize.micro, color: theme.muted, ...style }}>

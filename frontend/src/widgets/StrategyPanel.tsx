@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { AlgoStatus, AlgoStrategy, AlgoStrategyCreate } from "../api/types";
-import { NOT_IN_SNAPSHOT, DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
+import { NOT_IN_SNAPSHOT, demoWriteProps, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
 import { deckLine } from "./help";
@@ -206,7 +206,7 @@ function StrategyPanel() {
             }
           }}
           disabled={killing || demo}
-          title={demo ? DEMO_WRITE_TITLE : undefined}
+          {...demoWriteProps(demo)}
           style={{
             padding: "4px 12px",
             background: killed ? theme.panelHeader : confirmingKill ? theme.down : "rgba(248,81,73,0.12)",
@@ -250,11 +250,11 @@ function StrategyPanel() {
               </span>
               <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                 {s.status === "running" || s.status === "active" ? (
-                  <button onClick={() => act(s, "pause")} disabled={busy === s.id || demo} title={demo ? DEMO_WRITE_TITLE : undefined} style={ctrlBtn}>
+                  <button onClick={() => act(s, "pause")} disabled={busy === s.id || demo} {...demoWriteProps(demo)} style={ctrlBtn}>
                     PAUSE
                   </button>
                 ) : (
-                  <button onClick={() => act(s, "start")} disabled={busy === s.id || demo} title={demo ? DEMO_WRITE_TITLE : undefined} style={ctrlBtn}>
+                  <button onClick={() => act(s, "start")} disabled={busy === s.id || demo} {...demoWriteProps(demo)} style={ctrlBtn}>
                     START
                   </button>
                 )}
@@ -275,7 +275,7 @@ function StrategyPanel() {
                     }
                   }}
                   disabled={busy === s.id || demo}
-                  title={demo ? DEMO_WRITE_TITLE : undefined}
+                  {...demoWriteProps(demo)}
                   style={
                     confirmingDeleteId === s.id
                       ? { ...ctrlBtn, color: theme.bg, background: theme.down, border: `1px solid ${theme.down}` }
@@ -335,7 +335,7 @@ function StrategyPanel() {
           <button
             type="submit"
             disabled={demo || creating || !signalIds.length}
-            title={demo ? DEMO_WRITE_TITLE : undefined}
+            {...demoWriteProps(demo)}
             style={{
               alignSelf: "flex-start",
               padding: "5px 14px",

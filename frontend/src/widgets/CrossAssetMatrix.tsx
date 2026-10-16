@@ -14,7 +14,7 @@ import { useState } from "react";
 
 import { api } from "../api/client";
 import type { CrossAssetSnapshot, RatioItem } from "../api/types";
-import { useDemoMode } from "../demo";
+import { NOT_IN_SNAPSHOT, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -135,6 +135,9 @@ function CrossAssetMatrix() {
 
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 8px", display: "flex", flexDirection: "column" }}>
         {/* snapshot strip (least critical → flex-ordered last so the heatmap leads) */}
+        {demo && d.snapshot.every((s) => s.last === null) ? (
+          <PanelState kind="empty" message={NOT_IN_SNAPSHOT} />
+        ) : (
         <div style={{ order: 4 }}>
         {/* snapshot strip header */}
         <div
@@ -157,6 +160,7 @@ function CrossAssetMatrix() {
           <SnapshotRow key={s.symbol} s={s} />
         ))}
         </div>
+        )}
 
         {/* avg corr summary */}
         <div

@@ -28,7 +28,7 @@
 import { useEffect, useRef, useState, useId } from "react";
 
 import { ApiError, notifyUnauthorized, readOnlyDemoError } from "../api/client";
-import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
+import { demoWriteProps, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
 import { PanelHead } from "./PanelHead";
@@ -629,7 +629,7 @@ function NoteEditor() {
             <button
               type="button"
               disabled={saving || demo}
-              title={demo ? DEMO_WRITE_TITLE : undefined}
+              {...demoWriteProps(demo)}
               onClick={() => void save()}
               style={{ padding: "6px 14px", background: theme.panelHeader, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 4, cursor: saving ? "default" : "pointer", fontSize: theme.fontSize.micro }}
             >
@@ -639,7 +639,7 @@ function NoteEditor() {
               <button
                 type="button"
                 disabled={demo}
-                title={demo ? DEMO_WRITE_TITLE : undefined}
+                {...demoWriteProps(demo)}
                 onClick={() => setConfirmingSign(true)}
                 style={{ padding: "6px 14px", background: "transparent", color: theme.up, border: `1px solid ${theme.up}`, borderRadius: 4, cursor: "pointer", fontSize: theme.fontSize.micro }}
               >

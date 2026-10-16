@@ -139,7 +139,8 @@ function RegimeComposite() {
   if (!d) return <PanelState kind="empty" message="no data" />;
   // No component has a value → there is no verdict to show (a NEUTRAL badge
   // would read as a real reading), and null scores must not draw coloured dashes.
-  const noReading = d.components.every((c) => c.score === null && c.value === null);
+  const noReading =
+    d.components.length > 0 ? d.components.every((c) => c.score === null && c.value === null) : d.score === null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -268,7 +269,7 @@ function RegimeComposite() {
         )}
 
         {/* footer: recession flag + sahm */}
-        <div
+        {!noReading && <div
           style={{
             flexShrink: 0,
             display: "flex",
@@ -302,7 +303,7 @@ function RegimeComposite() {
             </span>
           </span>
           <span style={{ marginLeft: "auto" }}>{d.as_of.slice(0, 10)}</span>
-        </div>
+        </div>}
       </div>
     </div>
   );

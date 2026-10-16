@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, algoStreamUrl, api } from "../api/client";
 import type { AlgoFill, AlgoOrder } from "../api/types";
 import { LOCALE } from "../format";
-import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
+import { demoWriteProps, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -132,7 +132,7 @@ export function OrdersBlotter() {
                     <button
                       onClick={() => cancel(o.id)}
                       disabled={cancelling === o.id || demo}
-                      title={demo ? DEMO_WRITE_TITLE : undefined}
+                      {...demoWriteProps(demo)}
                       style={{
                         background: "transparent",
                         border: `1px solid ${theme.border}`,

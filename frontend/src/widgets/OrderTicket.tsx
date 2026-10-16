@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { AlgoOrder, AlgoOrderSpec } from "../api/types";
-import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
+import { demoWriteProps, DemoWriteNote, useDemoMode } from "../demo";
 import { LOCALE } from "../format";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
@@ -155,7 +155,7 @@ function OrderTicket() {
               type="button"
               onClick={resume}
               disabled={resuming || demo}
-              title={demo ? DEMO_WRITE_TITLE : undefined}
+              {...demoWriteProps(demo)}
               style={{
                 background: "transparent",
                 border: `1px solid ${theme.down}`,
@@ -243,7 +243,7 @@ function OrderTicket() {
           <button
             type="submit"
             disabled={demo || submitting || !symbol.trim() || limitPriceInvalid}
-            title={demo ? DEMO_WRITE_TITLE : undefined}
+            {...demoWriteProps(demo)}
             style={{
               padding: "6px 14px",
               background: theme.panelHeader,

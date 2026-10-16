@@ -4,7 +4,7 @@
 import { useState } from "react";
 
 import { ApiError, api, intelStreamUrl } from "../api/client";
-import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
+import { demoWriteProps, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { JobStatus } from "./JobStatus";
@@ -43,7 +43,7 @@ function IntelRunner() {
         <button
           onClick={run}
           disabled={launching || demo}
-          title={demo ? DEMO_WRITE_TITLE : undefined}
+          {...demoWriteProps(demo)}
           style={{ padding: "5px 14px", background: theme.panelHeader, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 4, cursor: launching ? "default" : "pointer", fontSize: theme.fontSize.micro }}
         >
           {launching ? "ENQUEUING…" : "ENRICH NOW"}

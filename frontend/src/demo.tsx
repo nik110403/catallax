@@ -13,6 +13,7 @@ const listeners = new Set<() => void>();
 export function setDemoMode(v: boolean): void {
   if (v === demo) return;
   demo = v;
+  document.body.classList.toggle("demo", v); // CSS hook: disabled-control treatment
   listeners.forEach((l) => l());
 }
 
@@ -28,15 +29,23 @@ export function useDemoMode(): boolean {
   );
 }
 
-export const DEMO_WRITE_LINE = "Read-only demo — this action is disabled; the terminal runs it locally.";
-// Disabled-control tooltip: the line above is the reason.
-export const DEMO_WRITE_TITLE = DEMO_WRITE_LINE;
+export const DEMO_WRITE_LINE = "Disabled in this demo; works in a self-hosted install.";
+export const DEMO_DESC_ID = "demo-write-line";
+// Spread onto a disabled write control: tooltip + accessible description
+// (the single sr-only #demo-write-line element rendered by App).
+export const demoWriteProps = (demo: boolean) =>
+  demo ? { title: DEMO_WRITE_LINE, "aria-describedby": DEMO_DESC_ID } : {};
+
+// Upstream is cache-only (backend UpstreamDisabled, code UPSTREAM_DISABLED,
+// public message "Live upstream fetching is disabled (cache-only demo)"):
+// the only error that really means "not in the snapshot".
+export const isSnapshotMiss = (msg: string): boolean => /cache-only|UPSTREAM_DISABLED/i.test(msg);
 
 // Persistent quiet inline line for write widgets (same look as the Reports
 // demo line). Renders nothing outside demo mode.
 export function DemoLine({ text = DEMO_WRITE_LINE, style }: { text?: string; style?: React.CSSProperties }) {
   return (
-    <div role="status" style={{ fontSize: theme.fontSize.micro, color: theme.muted, padding: "2px 0", ...style }}>
+    <div style={{ fontSize: theme.fontSize.micro, color: theme.muted, padding: "2px 0", ...style }}>
       {text}
     </div>
   );

@@ -7,7 +7,7 @@
 import { useState } from "react";
 
 import { api } from "../api/client";
-import { NOT_IN_SNAPSHOT, DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
+import { NOT_IN_SNAPSHOT, demoWriteProps, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -90,7 +90,7 @@ function SignalScoreboard() {
               <button
                 onClick={seed}
                 disabled={seeding || demo}
-                title={demo ? DEMO_WRITE_TITLE : undefined}
+                {...demoWriteProps(demo)}
                 style={{ padding: "5px 12px", background: theme.panelHeader, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 4, cursor: seeding ? "default" : "pointer", fontSize: theme.fontSize.micro }}
               >
                 {seeding ? "seeding…" : "Seed reference factors"}
