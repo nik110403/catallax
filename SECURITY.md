@@ -1,8 +1,8 @@
 # Security
 
 Catallax is a single-user application meant for a trusted local network. This
-repository is an unmaintained snapshot: there is no security contact, and reports
-will not be triaged.
+repository is a public copy of a private project, updated in batches. There is no
+dedicated security contact.
 
 If you run it:
 

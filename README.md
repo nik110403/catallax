@@ -6,10 +6,11 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-8c2f1b?style=flat)](LICENSE) [![Docs: CC BY 4.0](https://img.shields.io/badge/docs-CC%20BY%204.0-57534e?style=flat)](LICENSE-docs)
 
-> **Snapshot of a private project.** This repository is a frozen, public copy of a
+> **Public copy of a private project.** This repository is a public copy of a
 > terminal I run for my own finances. Personal data, private infrastructure and the
 > AI features have been removed; the portfolio you see is a synthetic persona served
-> by a stub exporter. It is not maintained, and issues and pull requests are off.
+> by a stub exporter. I update it from the private project in batches, and each batch
+> goes through the same scrub and privacy scan before it lands here.
 
 Catallax puts net worth, holdings and a Beancount ledger into one dense, keyboard-driven
 dashboard, then surrounds them with the market context you would otherwise open six tabs

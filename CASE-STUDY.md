@@ -113,8 +113,8 @@ wrote which line, and I would not read it as a split of the work.
 
 This is a single-user LAN app. It speaks plain HTTP, has a passphrase gate and no user
 accounts, and has never had to survive hostile traffic, which is why there is no hosted demo.
-The copy is a frozen snapshot: it will not get fixes, and the market-data adapters depend on
-public pages that change without notice. Several of them send a browser-like User-Agent, so
+The copy is updated from the private project in batches, so it trails the version I use, and
+the market-data adapters depend on public pages that change without notice. Several of them send a browser-like User-Agent, so
 anyone running it beyond personal research should check each source's terms first. The
 backend suite passes without a `.env` (1006 passed, 55 skipped when no Postgres is
 reachable), but the frontend tests were not run for this copy. Finally, the stub persona makes
