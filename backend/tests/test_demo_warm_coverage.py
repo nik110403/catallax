@@ -78,6 +78,7 @@ def warmed(monkeypatch: pytest.MonkeyPatch):
     for name in ("get_overview", "get_quakes"):
         monkeypatch.setattr(markets, name, _noop)
     monkeypatch.setattr(news, "get_news", _noop)
+    monkeypatch.setattr(dw, "warm_macro", _noop)  # covered by test_demo_warm_macro.py
     real_bundle = dw.MarketResearchEngine.bundle
     real_screen = dw.ResearchEngine.screen
     monkeypatch.setattr(dw.MarketResearchEngine, "bundle", _noop)

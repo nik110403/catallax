@@ -8,7 +8,7 @@ lives in deploy/demo/, not here.
 
 Default symbols = the demo persona's holdings (`services/demo.WF_ASSETS`);
 override with `DEMO_WARM_SYMBOLS=AAPL,BTC,...`. On top of those it warms the
-holdings-independent read paths (and imports the macro handoff file, `DEMO_MACRO_IMPORT`): the ticker-bar feed quotes, the market-research
+holdings-independent read paths: the ticker-bar feed quotes, the market-research
 ETF/vol universe bars, the equity-research screen universe (bars + fundamentals).
 Quotes survive between runs through the stale-copy TTL (`QUOTE_STALE_TTL_SECONDS`,
 2 days in the demo), bars live in Postgres, fundamentals/sentiment/bundles have
@@ -36,12 +36,12 @@ from app.adapters.breadth_adapter import BreadthAdapter
 from app.adapters.factory import ADAPTERS, build_adapter, build_chain
 from app.adapters.yfinance_adapter import YFinanceAdapter
 from app.adapters.fundamentals_adapter import FundamentalsAdapter
+from app.adapters.macro_adapter import MacroAdapter
 from app.adapters.sentiment_adapter import SentimentAdapter
 from app.adapters.shiller_adapter import ShillerAdapter
 from app.config import Settings, get_settings
 from app.db import dispose_engine, init_engine, session_scope
 from app.errors import RateLimitExceeded
-from app.macro_import import import_macro
 from app.services import markets, news
 from app.services.demo import WF_ASSETS
 from app.services.history import HistoryStore
@@ -66,6 +66,85 @@ TICKER_FEED = (
     "GC=F", "SI=F", "CL=F", "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META",
     "BTC:coingecko", "ETH:coingecko", "SOL:coingecko",
 )
+
+
+# Macro series the demo reads besides the market-research FRED list: the frontend's
+# macro-series widget default (`defaultConfig` in frontend/src/widgets/index.ts; a test pins
+# the two in sync). econdb `ROOT.country` ids are keyless; bare ids are FRED (key needed).
+MACRO_SERIES = (("CPI.united_states", "toya"),)
+MACRO_READY_WAIT_SECONDS = 120.0  # openbb-data boots with the job; bounded wait for its schema
+MACRO_READY_POLL_SECONDS = 3.0
+
+
+def macro_series_targets(settings: Settings) -> list[tuple[str, str]]:
+    """(series_id, transform) the read paths request: market research reads every configured
+    FRED id with the adapter's default transform (`MacroAdapter.series(sid)`), the widget its default."""
+    out = [(sid, "toya") for sid in settings.market_research_fred_list]
+    out += [t for t in MACRO_SERIES if t not in out]
+    return out
+
+
+def _macro_empty(data: object) -> bool:
+    return not (getattr(data, "points", None) or getattr(data, "spreads", None)
+                or getattr(data, "cells", None) or getattr(data, "events", None))
+
+
+async def _macro_ready(settings: Settings) -> None:
+    """Wait (bounded) until openbb-data answers; raise so the macro steps are skipped otherwise."""
+    import httpx
+
+    url = settings.openbb_api_url.rstrip("/") + "/openapi.json"
+    deadline = asyncio.get_running_loop().time() + MACRO_READY_WAIT_SECONDS
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                if (await client.get(url)).status_code == 200:
+                    return
+        except httpx.HTTPError:
+            pass
+        if asyncio.get_running_loop().time() >= deadline:
+            raise RuntimeError(f"openbb-data not ready at {url} after {MACRO_READY_WAIT_SECONDS:.0f}s")
+        await asyncio.sleep(MACRO_READY_POLL_SECONDS)
+
+
+async def _macro_call(label: str, coro) -> None:  # noqa: ANN001
+    """One MacroAdapter call that must have written fresh data: an empty or stale-served
+    result means the live source returned nothing, which is a failed warm of that key."""
+    env = await coro
+    if env.stale or _macro_empty(env.data):
+        raise RuntimeError(f"{label}: no live data (stale={env.stale})")
+
+
+async def warm_macro(redis: Redis, settings: Settings, step) -> None:  # noqa: ANN001
+    """Fill the `macro:*` keys the Macro/Rates tabs and the market-research bundle read, by
+    calling MacroAdapter against the openbb-data sidecar (it writes KEY and KEY:stale itself,
+    exactly what `_cached` reads). Every call is its own optional step. Without a FRED key the
+    keyless providers (yield curves, treasury rates, econdb indicators/series) still warm and
+    the FRED-only parts (bare FRED series, calendar) are skipped with a warning."""
+    adapter = MacroAdapter(redis, settings)
+    try:
+        await _macro_ready(settings)
+    except Exception as exc:
+        await step("macro ready", _raise(exc))
+        return
+    for region in ("US", "EU"):
+        await step(f"macro yield-curve {region}", _macro_call(f"yield-curve {region}", adapter.yield_curve(region)))
+    await step("macro rates", _macro_call("rates", adapter.rates()))
+    await step("macro indicators", _macro_call("indicators", adapter.indicators()))
+    has_key = bool(settings.openbb_fred_api_key)
+    if has_key:
+        await step("macro calendar", _macro_call("calendar", adapter.calendar()))
+    else:
+        logger.warning("warm macro calendar skipped: no DEMO_FRED_API_KEY (the Calendar widget stays empty)")
+    for sid, transform in macro_series_targets(settings):
+        if "." not in sid and not has_key:
+            logger.warning("warm macro series %s skipped: no DEMO_FRED_API_KEY", sid)
+            continue
+        await step(f"macro series {sid}:{transform}", _macro_call(f"series {sid}", adapter.series(sid, transform)))
+
+
+async def _raise(exc: Exception) -> None:
+    raise exc
 
 
 def quote_targets(redis: Redis, settings: Settings, symbols: list[tuple[str, str]]) -> list[tuple[PriceSourceAdapter, str]]:
@@ -190,8 +269,8 @@ async def warm(redis: Redis, settings: Settings) -> tuple[int, int, int]:
     await step("breadth", BreadthAdapter(redis, settings).diary())
     await step("fear-greed", sentiment.fear_greed())
     await step("cot", sentiment.cot())
-    # Macro series handed over from the private install (optional); the bundle reads them.
-    await step("macro import", import_macro(redis, settings.macro_cache_ttl_seconds, os.environ.get("DEMO_MACRO_IMPORT")))
+    # Macro data via the openbb-data sidecar (optional steps); the bundle below reads the FRED series.
+    await warm_macro(redis, settings, step)
     # Recompute the market-research bundle from the bars just stored: a bundle cached
     # earlier from empty history would otherwise keep the null reports for its 6h TTL.
     await step("market-research bundle", MarketResearchEngine(redis, settings).bundle(refresh=True))

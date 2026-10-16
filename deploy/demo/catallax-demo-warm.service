@@ -7,6 +7,7 @@ Requires=docker.service
 Type=oneshot
 # Replace @STACK_DIR@ with the demo clone, e.g. via: sed "s|@STACK_DIR@|$PWD|g"
 WorkingDirectory=@STACK_DIR@
-# Same lock as reset-demo.sh: never overlaps with the nightly reset.
-ExecStart=/usr/bin/flock -w 600 @STACK_DIR@/.demo-lock @STACK_DIR@/deploy/demo/compose.sh --profile warm run --rm demo-warm
+# Takes the same lock as reset-demo.sh (never overlaps with the nightly reset), runs the warm,
+# then stops the openbb-data sidecar.
+ExecStart=@STACK_DIR@/deploy/demo/warm-demo.sh
 TimeoutStartSec=10min

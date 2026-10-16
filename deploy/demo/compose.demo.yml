@@ -10,6 +10,13 @@ x-hardened: &hardened
   cap_drop: [ALL]
   read_only: true
 
+# `env_file: .env` hands every key of the stack env file to a service. The demo's own FRED key
+# (DEMO_FRED_API_KEY) is for openbb-data and demo-warm only, so every other service that reads
+# the stack env file blanks both names. The preflight pins this on the rendered config.
+x-no-fred: &no-fred
+  OPENBB_FRED_API_KEY: ""
+  DEMO_FRED_API_KEY: ""
+
 networks:
   # Explicit subnet: a busy host can run out of Docker's predefined address
   # pools ("all predefined address pools have been fully subnetted"). Pick a
@@ -18,6 +25,14 @@ networks:
     ipam:
       config:
         - subnet: "${DEMO_SUBNET:?set DEMO_SUBNET in the stack env file to a free /24}"
+  # The base file declares macro-net; the demo pins its subnet (same reason) and uses it for
+  # one purpose: openbb-data (warm profile) <-> demo-warm. Only those two services attach.
+  # Not `internal`: the sidecar needs egress to the free public macro providers. The backend,
+  # nginx and the frontend are never on it (the preflight checks), so visitors cannot reach it.
+  macro-net:
+    ipam:
+      config:
+        - subnet: "${DEMO_MACRO_SUBNET:?set DEMO_MACRO_SUBNET in the stack env file to a second free /24, disjoint from DEMO_SUBNET}"
 
 services:
   nginx:
@@ -56,13 +71,15 @@ services:
     mem_limit: 64m
     cpus: 0.5
     tmpfs: [/var/cache/nginx, /var/run, /tmp]
+    environment:
+      <<: *no-fred
 
   fastapi-backend:
     <<: *hardened
     image: catallax-demo-backend:local
     mem_limit: 512m
     cpus: 1.0
-    networks: !override [default]  # no macro-net: the openbb-data sidecar is not part of the demo
+    networks: !override [default]  # no macro-net: the backend has no route to openbb-data
     tmpfs: [/tmp]
     depends_on:  # merges with the base file's map: the sample rows land before the backend serves
       demo-seed:
@@ -81,6 +98,7 @@ services:
       # Fresh keys still expire quickly; the long-lived stale copy is what the
       # cache-only backend serves between warm runs (hourly outside market hours).
       QUOTE_STALE_TTL_SECONDS: "172800"
+      <<: *no-fred
 
   stub-exporter:
     <<: *hardened
@@ -96,6 +114,8 @@ services:
     mem_limit: 256m
     cpus: 1.0
     tmpfs: [/tmp, /var/run/postgresql]
+    environment:
+      <<: *no-fred
 
   redis:
     <<: *hardened
@@ -114,6 +134,8 @@ services:
     mem_limit: 64m
     cpus: 0.5
     tmpfs: [/tmp]
+    environment:
+      <<: *no-fred
 
   # Never started: nothing in the demo reaches it (nginx answers /fava/ with 404).
   # Stays hardened in case someone activates the profile by hand.
@@ -125,6 +147,7 @@ services:
     tmpfs: [/tmp]
     environment:
       BEANCOUNT_FILE: /data/ledger/main.bean
+      <<: *no-fred
     # the sample ledger is already mounted :ro by the base file
 
   notes-mount-init:
@@ -151,12 +174,14 @@ services:
       SHARE_PASSPHRASE: ""
       # The writer sets the stale-copy TTL: it must match the backend's reader.
       QUOTE_STALE_TTL_SECONDS: "172800"
-      # Macro series exported from the private install (DEMO-SPEC section 12); optional.
-      DEMO_MACRO_IMPORT: /import/macro.json
-    # Read-only handoff dir, on this service only (the backend gets no mount). If the host
-    # dir is missing docker creates it empty and the import step skips.
-    volumes:
-      - ${DEMO_HANDOFF_DIR:-/srv/catallax-handoff}:/import:ro
+      # Macro data is fetched by this job itself through the openbb-data sidecar.
+      OPENBB_API_URL: http://openbb-data:6900
+      # The demo's own free FRED key (optional; never the private install's). Without it the
+      # keyless providers still warm and the FRED-only parts (bare FRED series, the economic
+      # calendar) are skipped with a warning.
+      OPENBB_FRED_API_KEY: ${DEMO_FRED_API_KEY:-}
+      DEMO_FRED_API_KEY: ""  # the name is only the stack env file's; the job reads the line above
+    networks: [default, macro-net]
     mem_limit: 256m
     cpus: 0.5
     tmpfs: [/tmp]
@@ -166,6 +191,28 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      # Started with the job. Not service_healthy: the macro step polls the sidecar itself, so an
+      # openbb-data that never comes up costs only the macro step, not the quotes and bars.
+      openbb-data:
+        condition: service_started
+        required: false
+
+  # Macro-data sidecar (warm profile only). demo-warm starts it with each run and the warm
+  # scripts (warm-demo.sh, reset-demo.sh) stop it afterwards, so it holds no memory between
+  # warms. Alone on macro-net with demo-warm; no host port. The entrypoint writes the FRED
+  # credential store under /root/.openbb_platform: a tmpfs, so the rootfs stays read-only.
+  openbb-data:
+    <<: *hardened
+    profiles: ["warm"]
+    networks: !override [macro-net]
+    environment:
+      OPENBB_API_PORT: "6900"
+      OPENBB_FRED_API_KEY: ${DEMO_FRED_API_KEY:-}
+      HOME: /tmp
+    tmpfs: [/tmp, /root/.openbb_platform]
+    mem_limit: 768m
+    cpus: 1.0
+    restart: "no"
 
   # One-shot sample-artifact seed (DEMO-SPEC §13): migrates, then writes the synthetic
   # backtest/lab/journal/notes/watchlist/signals/algo/news rows straight into Postgres.
@@ -185,6 +232,7 @@ services:
       UPSTREAM_MODE: cache-only
       LLM_PROVIDER: noop
       SHARE_PASSPHRASE: ""
+      <<: *no-fred
     mem_limit: 256m
     cpus: 0.5
     tmpfs: [/tmp]
@@ -195,8 +243,6 @@ services:
 
   # Heavy / worker services stay off: the profile is never activated.
   report-worker:
-    profiles: ["never"]
-  openbb-data:
     profiles: ["never"]
   backtester:
     profiles: ["never"]

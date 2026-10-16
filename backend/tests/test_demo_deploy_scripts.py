@@ -31,10 +31,12 @@ def _render() -> dict:
     backend = _svc(environment={
         "DEMO_READONLY": "true", "UPSTREAM_MODE": "cache-only", "LLM_PROVIDER": "noop",
         "DEMO_MODE": "true", "DEMO_SAMPLE_READS": "true", "SHARE_PASSPHRASE": "", "DEMO_BIND_ADDR": LAN,
+        "OPENBB_FRED_API_KEY": "", "DEMO_FRED_API_KEY": "",
     })
     return {
         "name": "catallax-demo",
-        "networks": {"default": {"ipam": {"config": [{"subnet": "172.30.200.0/24"}]}}},
+        "networks": {"default": {"ipam": {"config": [{"subnet": "172.30.200.0/24"}]}},
+                     "macro-net": {"ipam": {"config": [{"subnet": "172.30.201.0/24"}]}}},
         "services": {
             "nginx": _svc(
                 cap_add=["CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"],
@@ -47,6 +49,10 @@ def _render() -> dict:
             ),
             "fastapi-backend": backend,
             "redis": _svc(cap_add=["CHOWN", "SETGID", "SETUID"]),
+            "demo-warm": _svc(networks={"default": None, "macro-net": None},
+                              environment={"OPENBB_FRED_API_KEY": "demo-fred-key", "DEMO_FRED_API_KEY": ""}),
+            "openbb-data": _svc(networks={"macro-net": None},
+                                environment={"OPENBB_FRED_API_KEY": "demo-fred-key", "OPENBB_API_PORT": "6900"}),
         },
     }
 
@@ -221,44 +227,64 @@ def test_compose_sh_version_gate_fails_closed(tmp_path: Path, version: str, ok: 
         assert r.returncode == 1 and "RAN" not in r.stdout and "2.24.4" in r.stderr
 
 
-def _warm_with(volumes: list[dict], name: str = "demo-warm") -> dict:
+_OUTSIDE = {"type": "bind", "source": "/srv/catallax-handoff", "target": "/import", "read_only": True}
+
+
+@pytest.mark.parametrize("name", ["demo-warm", "fastapi-backend", "redis", "openbb-data"])
+@pytest.mark.parametrize("source", ["/srv/catallax-handoff", "/etc", "/", "/var/run", "/srv/../etc"])
+def test_preflight_rejects_every_bind_outside_the_stack_dir(tmp_path: Path, name: str, source: str) -> None:
     render = _render()
-    render["services"][name] = _svc(volumes=volumes)
-    return render
-
-
-_HANDOFF = {"type": "bind", "source": "/srv/catallax-handoff", "target": "/import", "read_only": True}
-
-
-def test_preflight_allows_exactly_the_read_only_handoff_bind_on_demo_warm(tmp_path: Path) -> None:
-    r = _run_preflight(tmp_path, _warm_with([_HANDOFF]))
-    assert r.returncode == 0, r.stderr
-
-
-@pytest.mark.parametrize("label,render", [
-    ("rw handoff", _warm_with([{**_HANDOFF, "read_only": False}])),
-    ("wrong target", _warm_with([{**_HANDOFF, "target": "/data"}])),
-    ("other host dir rw", _warm_with([{"type": "bind", "source": "/etc", "target": "/etc2", "read_only": True}])),
-    ("root", _warm_with([{**_HANDOFF, "source": "/"}])),
-    ("etc", _warm_with([{**_HANDOFF, "source": "/etc"}])),
-    ("var run", _warm_with([{**_HANDOFF, "source": "/var/run"}])),
-    ("run", _warm_with([{**_HANDOFF, "source": "/run"}])),
-    ("dotdot", _warm_with([{**_HANDOFF, "source": "/srv/../etc"}])),
-    ("srv itself nested", _warm_with([{**_HANDOFF, "source": "/srv/a/b"}])),
-    ("unexpected option", _warm_with([{**_HANDOFF, "bind": {"propagation": "rshared"}}])),
-    ("unexpected key", _warm_with([{**_HANDOFF, "volume": {"nocopy": True}}])),
-    ("other srv dir", _warm_with([{**_HANDOFF, "source": "/srv/other"}])),
-    ("trailing slash", _warm_with([{**_HANDOFF, "source": "/srv/catallax-handoff/"}])),
-    ("two handoff binds", _warm_with([_HANDOFF, {**_HANDOFF, "source": "/srv/other"}])),
-    ("on the backend", None),
-    ("on another service", _warm_with([_HANDOFF], name="redis")),
-])
-def test_preflight_rejects_other_out_of_stack_binds(tmp_path: Path, label: str, render: dict | None) -> None:
-    if render is None:
-        render = _render()
-        render["services"]["fastapi-backend"]["volumes"] = [_HANDOFF]
+    render["services"][name]["volumes"] = [{**_OUTSIDE, "source": source}]
     r = _run_preflight(tmp_path, render)
-    assert r.returncode != 0 and "outside the stack dir" in r.stderr, label
+    assert r.returncode != 0 and "outside the stack dir" in r.stderr, (name, source)
+
+
+def _fail(tmp_path: Path, mutate, needle: str) -> None:  # noqa: ANN001
+    render = _render()
+    mutate(render)
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and needle in r.stderr, r.stderr
+
+
+def test_preflight_rejects_backend_on_macro_net(tmp_path: Path) -> None:
+    _fail(tmp_path, lambda r: r["services"]["fastapi-backend"].update(networks={"default": None, "macro-net": None}),
+          "macro-net")
+
+
+@pytest.mark.parametrize("name", ["nginx", "redis"])
+def test_preflight_rejects_other_services_on_macro_net(tmp_path: Path, name: str) -> None:
+    _fail(tmp_path, lambda r: r["services"][name].update(networks={"macro-net": None}), "macro-net")
+
+
+def test_preflight_rejects_openbb_data_on_the_default_network_or_with_a_port(tmp_path: Path) -> None:
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(networks={"default": None, "macro-net": None}),
+          "macro-net only")
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(ports=[{"host_ip": LAN, "target": 6900}]),
+          "host port")
+
+
+def test_preflight_rejects_a_backend_fred_key(tmp_path: Path) -> None:
+    _fail(tmp_path, lambda r: r["services"]["fastapi-backend"]["environment"].update(OPENBB_FRED_API_KEY="k"), "OPENBB_FRED_API_KEY")
+    _fail(tmp_path, lambda r: r["services"]["fastapi-backend"]["environment"].update(DEMO_FRED_API_KEY="k"), "FRED key")
+    _fail(tmp_path, lambda r: r["services"]["redis"]["environment"].update(DEMO_FRED_API_KEY="k"), "FRED key")
+    _fail(tmp_path, lambda r: r["services"]["fastapi-backend"]["environment"].pop("OPENBB_FRED_API_KEY"), "OPENBB_FRED_API_KEY")
+
+
+def test_preflight_rejects_backend_pointed_at_openbb_data(tmp_path: Path) -> None:
+    _fail(tmp_path, lambda r: r["services"]["fastapi-backend"]["environment"].update(OPENBB_API_URL="http://openbb-data:6900"),
+          "OPENBB_API_URL")
+
+
+def test_preflight_macro_subnet_rules(tmp_path: Path) -> None:
+    def subnet(v):  # noqa: ANN001, ANN202
+        return lambda r: r["networks"]["macro-net"].update(ipam={"config": [{"subnet": v}]})
+    _fail(tmp_path, subnet("172.30.200.128/25"), "overlap")
+    _fail(tmp_path, subnet("not-a-cidr"), "macro-net")
+    _fail(tmp_path, subnet("172.30.201.0/30"), "macro-net")
+    _fail(tmp_path, subnet("198.51.100.0/24"), "DEMO_TRUSTED_PROXY")
+    _fail(tmp_path, lambda r: r["networks"]["macro-net"].pop("ipam"), "macro-net")
+    r = _run_preflight(tmp_path, _render())
+    assert r.returncode == 0, r.stderr
 
 
 def _reset_stack(tmp_path: Path, fail_on: str) -> tuple[Path, Path]:

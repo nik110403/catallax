@@ -460,7 +460,7 @@ class MacroAdapter:
         backend. Names/dates only (FRED publishes no consensus/actual here).
         """
         if not self.settings.openbb_fred_api_key:
-            # No key can still mean a cached/imported calendar (demo handoff): serve it first.
+            # No key can still mean a warmed calendar (the cache-only demo backend never holds one): serve it first.
             for suffix, stale in (("", False), (":stale", True)):
                 try:
                     raw = await self.redis.get(f"macro:calendar{suffix}")

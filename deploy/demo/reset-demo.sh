@@ -85,5 +85,9 @@ LOCKED=1
 
 # Redis and postgres were wiped: refill caches and daily bars so the demo is
 # not empty until the next timer tick.
-"$DC" --profile warm run --rm demo-warm
+# demo-warm starts the openbb-data sidecar (macro step); stop it again whatever the outcome.
+rc=0
+"$DC" --profile warm run --rm demo-warm || rc=$?
+"$DC" --profile warm rm -sf openbb-data || echo "reset-demo: could not stop openbb-data" >&2
+[ "$rc" -eq 0 ] || exit "$rc"
 echo "reset-demo: done"

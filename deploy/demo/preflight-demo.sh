@@ -11,8 +11,9 @@
 # The env_file copy of it that compose inlines into each service's environment is
 # ignored by key name before the marker scan (every other key is still scanned).
 # Docker Compose >= 2.24.4 is required (compose.sh checks and fails closed).
-# The only bind allowed outside the stack dir: the macro handoff dir, read-only at /import,
-# on demo-warm (DEMO-SPEC section 12).
+# No bind mount outside the stack dir is allowed, on any service.
+# Macro: openbb-data (warm profile) and demo-warm are the only services on macro-net; the
+# demo's FRED key reaches only those two (every other service must render it empty).
 # Test hook: PREFLIGHT_DEMO_RENDER=<file.json> checks a saved `config --format json`
 # render instead of invoking docker.
 set -euo pipefail
@@ -34,7 +35,7 @@ if [ -n "${PREFLIGHT_DEMO_RENDER:-}" ]; then
 else
   command -v docker >/dev/null || fail "docker CLI not found"
   # `--profile warm` renders the on-demand warm job too; the heavy profiles
-  # (macro, lab, backtest, algo, never) stay un-rendered, so a service that
+  # (lab, backtest, algo, never) stay un-rendered, so a service that
   # sneaks into the default set shows up in the allowlist check below.
   cfg="$("$STACK/deploy/demo/compose.sh" --profile warm config --format json)" \
     || fail "docker compose config failed"
@@ -77,7 +78,10 @@ for kind in ("secrets", "configs"):
             bad.append("%s %r is external" % (kind, n))
 
 ALLOWED = {"nginx", "react-frontend", "fastapi-backend", "stub-exporter", "postgres",
-           "redis", "fava", "notes-mount-init", "demo-warm", "demo-seed"}
+           "redis", "fava", "notes-mount-init", "demo-warm", "demo-seed", "openbb-data"}
+# The only services that may sit on macro-net, and the only ones that may carry the FRED key.
+MACRO_NET_MEMBERS = {"openbb-data", "demo-warm"}
+FRED_KEY_SERVICES = {"openbb-data", "demo-warm"}
 services = cfg.get("services") or {}
 for sname in services:
     if sname not in ALLOWED:
@@ -100,7 +104,6 @@ for sname, svc in services.items():
     for k in ("devices", "volumes_from"):
         if svc.get(k):
             bad.append(L("sets %s" % k))
-    handoff_seen = False
     for v in svc.get("volumes") or []:
         if not isinstance(v, dict):
             bad.append(L("volume entry not normalised: %r" % (v,)))
@@ -109,15 +112,7 @@ for sname, svc in services.items():
         if "docker.sock" in src or "docker.sock" in str(v.get("target", "")):
             bad.append(L("mounts a docker socket"))
         if v.get("type") == "bind" and not inside(src):
-            # The ONE exception: the macro handoff dir, read-only at /import, on demo-warm.
-            if (sname == "demo-warm" and v.get("target") == "/import" and v.get("read_only") is True
-                    and src == "/srv/catallax-handoff"
-                    and not (set(v) - {"type", "source", "target", "read_only", "bind"})
-                    and not (set(v.get("bind") or {}) - {"create_host_path"})
-                    and not handoff_seen):
-                handoff_seen = True
-            else:
-                bad.append(L("bind mount %r is outside the stack dir" % src))
+            bad.append(L("bind mount %r is outside the stack dir" % src))
     for ef in svc.get("env_file") or []:
         p = ef.get("path") if isinstance(ef, dict) else ef
         if not p or not inside(p):
@@ -148,6 +143,24 @@ for sname, svc in services.items():
     for n in (svc.get("networks") or {}):
         if n not in (cfg.get("networks") or {}):
             bad.append(L("network %r is not declared by this stack" % n))
+    nets = set(svc.get("networks") or ["default"])  # no networks key = the default network
+    if "macro-net" in nets and sname not in MACRO_NET_MEMBERS:
+        bad.append(L("is on macro-net (only openbb-data and demo-warm may be)"))
+    if sname == "openbb-data" and nets != {"macro-net"}:
+        bad.append(L("must be on macro-net only, got %s" % sorted(nets)))
+    if sname == "demo-warm" and nets != {"default", "macro-net"}:
+        bad.append(L("must be on default and macro-net, got %s" % sorted(nets)))
+    if sname == "openbb-data" and svc.get("ports"):
+        bad.append(L("publishes a host port"))
+    # The demo FRED key: only openbb-data and demo-warm may hold it. Any FRED-named
+    # variable on another service must render empty (env_file inlines the stack env file).
+    if sname not in FRED_KEY_SERVICES:
+        e = svc.get("environment") or {}
+        if isinstance(e, list):
+            e = dict(str(x).split("=", 1) if "=" in str(x) else (str(x), "") for x in e)
+        for k, val in e.items():
+            if "FRED" in str(k).upper() and str(val) != "":
+                bad.append(L("environment %s carries a FRED key (only openbb-data and demo-warm may)" % k))
 
 # Required demo environment on the backend.
 be = (services.get("fastapi-backend") or {}).get("environment") or {}
@@ -158,6 +171,10 @@ for k, v in want.items():
         bad.append("fastapi-backend: %s=%r, expected %r" % (k, be.get(k), v))
 if str(be.get("SHARE_PASSPHRASE", "x")) != "":
     bad.append("fastapi-backend: SHARE_PASSPHRASE must be empty")
+if str(be.get("OPENBB_FRED_API_KEY", "x")) != "":
+    bad.append("fastapi-backend: OPENBB_FRED_API_KEY must be explicitly empty (the backend never holds a FRED key)")
+if "openbb-data" in services and "openbb-data" in str(be.get("OPENBB_API_URL", "")):
+    bad.append("fastapi-backend: OPENBB_API_URL must not point at openbb-data")
 
 # Private-infrastructure markers anywhere in the render. Port host_ip is the
 # operators chosen LAN bind address and is excluded from the scan (it must equal
@@ -224,25 +241,32 @@ else:
 if not any(str(t).split(":", 1)[0] == "/etc/nginx/demo-env" for t in ngx.get("tmpfs") or []):
     bad.append("nginx: tmpfs at /etc/nginx/demo-env is missing")
 
-# Stack network: one explicit IPv4 subnet, /16 to /28, disjoint from the trusted proxy.
+# Stack networks: one explicit IPv4 subnet each, /16 to /28, disjoint from each other and from
+# the trusted proxy.
 import ipaddress
-ipam = ((cfg.get("networks") or {}).get("default") or {}).get("ipam") or {}
-subs = [c.get("subnet") for c in ipam.get("config") or [] if isinstance(c, dict)]
-if len(subs) != 1 or len(ipam.get("config") or []) != 1:
-    bad.append("networks.default.ipam.config must hold exactly one subnet, got %r" % (subs,))
-else:
+nets = {}
+for nname in ("default", "macro-net"):
+    ipam = ((cfg.get("networks") or {}).get(nname) or {}).get("ipam") or {}
+    subs = [c.get("subnet") for c in ipam.get("config") or [] if isinstance(c, dict)]
+    if len(subs) != 1 or len(ipam.get("config") or []) != 1:
+        bad.append("networks.%s.ipam.config must hold exactly one subnet, got %r" % (nname, subs))
+        continue
     try:
         net = ipaddress.ip_network(str(subs[0]), strict=True)
-        if net.version != 4 or not 16 <= net.prefixlen <= 28:
-            bad.append("networks.default subnet must be IPv4 with a /16 to /28 prefix")
-        else:
-            try:
-                if net.overlaps(ipaddress.ip_network(tp, strict=False)):
-                    bad.append("networks.default subnet overlaps nginx DEMO_TRUSTED_PROXY")
-            except ValueError:
-                pass  # malformed DEMO_TRUSTED_PROXY is reported above
     except ValueError:
-        bad.append("networks.default subnet %r is not a valid CIDR" % (subs[0],))
+        bad.append("networks.%s subnet %r is not a valid CIDR" % (nname, subs[0]))
+        continue
+    if net.version != 4 or not 16 <= net.prefixlen <= 28:
+        bad.append("networks.%s subnet must be IPv4 with a /16 to /28 prefix" % nname)
+        continue
+    nets[nname] = net
+    try:
+        if net.overlaps(ipaddress.ip_network(tp, strict=False)):
+            bad.append("networks.%s subnet overlaps nginx DEMO_TRUSTED_PROXY" % nname)
+    except ValueError:
+        pass  # malformed DEMO_TRUSTED_PROXY is reported above
+if len(nets) == 2 and nets["default"].overlaps(nets["macro-net"]):
+    bad.append("networks.default and networks.macro-net subnets overlap (DEMO_SUBNET vs DEMO_MACRO_SUBNET)")
 blob = json.dumps(scan)
 markers = []
 with open(os.environ["DEMO_DENY_MARKERS_FILE"]) as fh:
