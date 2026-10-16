@@ -28,6 +28,7 @@ import { useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { DecisionRow, Recommendation, RuleEvaluation } from "../api/types";
+import { DemoLine } from "../demo";
 import { theme } from "../theme";
 import { PanelState } from "./PanelState";
 import {
@@ -278,9 +279,7 @@ function RecommendationCard({
       {actionable && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 2 }}>
           {demoMode ? (
-            <span style={{ fontSize: theme.fontSize.micro, color: theme.accent }}>
-              Demo mode — accept/override is disabled (read-only sample data).
-            </span>
+            <DemoLine text="Demo mode — accept/override is disabled (read-only sample data)." />
           ) : mode === "modify" ? (
             <>
               <div style={{ display: "flex", gap: 6, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -643,9 +642,7 @@ function ExecuteForm({
 
   if (demoMode) {
     return (
-      <span style={{ fontSize: theme.fontSize.micro, color: theme.accent }}>
-        Demo mode — execute is disabled (read-only sample data).
-      </span>
+      <DemoLine text="Demo mode — execute is disabled (read-only sample data)." />
     );
   }
 

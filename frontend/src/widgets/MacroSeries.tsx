@@ -11,6 +11,7 @@ import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
 import { PanelState } from "./PanelState";
+import { humanSeries, useDemoMode } from "../demo";
 import { chartOptions, controlStyle } from "./chartTheme";
 import { Provenance } from "./Provenance";
 import type { WidgetProps } from "./registry";
@@ -22,6 +23,7 @@ interface SeriesConfig {
 }
 
 export function MacroSeriesWidget({ config, onConfigChange }: WidgetProps<SeriesConfig>) {
+  const demo = useDemoMode();
   const series = config.series ?? "CPI.united_states";
   const transform = config.transform ?? "toya";
   const [draft, setDraft] = useState(series);
@@ -92,7 +94,7 @@ export function MacroSeriesWidget({ config, onConfigChange }: WidgetProps<Series
         deck={deckLine("macro-series")}
         agate={
           <>
-            <span title={d?.title}>{d?.title ?? series}</span>
+            <span title={d?.title}>{d?.title ?? (demo ? humanSeries(series) : series)}</span>
             {env && <Provenance source={env.source} cacheHit={env.cache_hit} stale={env.stale} warnings={env.warnings} fetchedAt={env.fetched_at} />}
           </>
         }
@@ -102,7 +104,7 @@ export function MacroSeriesWidget({ config, onConfigChange }: WidgetProps<Series
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => e.key === "Enter" && commit()}
-          placeholder="CPI.united_states or DGS10"
+          placeholder={demo ? "indicator code" : "CPI.united_states or DGS10"}
           spellCheck={false}
           // `flex: 1` was inert here: PanelHead's `children` wrapper is
           // flexShrink:0 with no width of its own, so there was never any

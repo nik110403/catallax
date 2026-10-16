@@ -1,6 +1,7 @@
 // Shared loading / empty / error / not-enabled surface for every panel (Phase 14e).
 // One component so copy, spacing and the live-region semantics are fixed in one
 // place — previously this markup was duplicated inline in 39 widgets.
+import { NOT_IN_SNAPSHOT, useDemoMode } from "../demo";
 import { theme } from "../theme";
 
 // `fill` centers the message and lets it own the whole panel body — for a state
@@ -103,6 +104,17 @@ type PanelStateProps =
   | { kind: "disabled"; profile: string; fill?: boolean };
 
 export function PanelState(props: PanelStateProps) {
+  const demo = useDemoMode();
+  // Hosted demo: a failed fetch means the warm snapshot has no data for this
+  // panel, not a fault the visitor can act on — show a muted empty state, not
+  // a red error with a Retry. (Outside demo mode nothing changes.)
+  if (demo && props.kind === "error") {
+    return (
+      <div className="panel-state" role="status" style={props.fill ? fillStyle : undefined}>
+        {NOT_IN_SNAPSHOT}
+      </div>
+    );
+  }
   if (props.kind === "loading") {
     if (props.skeleton) {
       return (

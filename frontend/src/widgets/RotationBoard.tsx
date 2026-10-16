@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 
 import { api } from "../api/client";
 import type { RotationRow } from "../api/types";
+import { useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -74,6 +75,7 @@ function GroupRow({ label }: { label: string }) {
 }
 
 function RotationBoard() {
+  const demo = useDemoMode();
   // Bumping retryKey re-runs useAsync's fetch — it's already part of the
   // hook's public contract (any deps change re-triggers the effect), so
   // Retry needs no change to useAsync.ts itself.
@@ -88,6 +90,8 @@ function RotationBoard() {
   const groups: string[] = [];
   const byGroup = new Map<string, RotationRow[]>();
   for (const r of d.rows) {
+    // Demo: only rows the snapshot actually has data for.
+    if (demo && [r.ret_1d, r.ret_1w, r.ret_1m, r.ret_3m, r.ret_6m, r.ret_ytd, r.rs_vs_bench_3m].every((v) => v === null)) continue;
     if (!byGroup.has(r.group)) {
       groups.push(r.group);
       byGroup.set(r.group, []);

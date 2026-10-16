@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, algoStreamUrl, api } from "../api/client";
 import type { AlgoFill, AlgoOrder } from "../api/types";
 import { LOCALE } from "../format";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -41,6 +42,7 @@ const tdR: React.CSSProperties = {
 };
 
 export function OrdersBlotter() {
+  const demo = useDemoMode();
   const [orders, setOrders] = useState<AlgoOrder[]>([]);
   const [fills, setFills] = useState<AlgoFill[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -86,6 +88,7 @@ export function OrdersBlotter() {
   }, []);
 
   const cancel = async (id: number) => {
+    if (demo) return;
     setCancelling(id);
     try {
       await api.algoCancelOrder(id);
@@ -100,6 +103,7 @@ export function OrdersBlotter() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <PanelHead deck={deckLine("algo-blotter")} />
+      {orders.some((o) => o.status === "new" || o.status === "accepted") && <DemoWriteNote style={{ padding: "2px 8px" }} />}
       {err && <InlineError msg={err} variant="text" style={{ padding: "4px 8px" }} />}
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -127,7 +131,8 @@ export function OrdersBlotter() {
                   {(o.status === "new" || o.status === "accepted") && (
                     <button
                       onClick={() => cancel(o.id)}
-                      disabled={cancelling === o.id}
+                      disabled={cancelling === o.id || demo}
+                      title={demo ? DEMO_WRITE_TITLE : undefined}
                       style={{
                         background: "transparent",
                         border: `1px solid ${theme.border}`,

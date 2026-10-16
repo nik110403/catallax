@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import { ApiError, api } from "../api/client";
 import type { WatchlistItemInput } from "../api/types";
 import { useTicker } from "../api/useTicker";
+import { useDemoMode, DEMO_WRITE_TITLE } from "../demo";
 import { LOCALE } from "../format";
 import { InlineError } from "./InlineError";
 
@@ -97,6 +98,7 @@ export function TickerBar() {
   const editBtnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
+  const demo = useDemoMode();
   const symbols = items.map(tokenFor);
   const ticks = useTicker(symbols);
   // Baseline = first observed price this session; colour persists as direction
@@ -152,6 +154,7 @@ export function TickerBar() {
     const b = base.current[sym];
     const cls =
       px !== undefined && b !== undefined ? (px > b ? "ticker-up" : px < b ? "ticker-down" : "") : "";
+    if (demo && t?.error) return null; // demo: only symbols with data
     return (
       <div className="ticker-cell" key={`${copyIdx}-${token}`}>
         <span className="ticker-sym">{labelFor(item)}</span>
@@ -289,6 +292,8 @@ export function TickerBar() {
           onClick={() => (editorOpen ? closeEditor() : openEditor())}
           aria-haspopup="dialog"
           aria-expanded={editorOpen}
+          disabled={demo}
+          title={demo ? DEMO_WRITE_TITLE : undefined}
         >
           EDIT
         </button>

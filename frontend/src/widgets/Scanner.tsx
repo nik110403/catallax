@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { api } from "../api/client";
 import type { Envelope, ScanReport, ScanRow } from "../api/types";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -50,6 +51,7 @@ function PatternChips({ row }: { row: ScanRow }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 function Scanner() {
+  const demo = useDemoMode();
   const enginesAsync = useAsync(() => api.labEngines(), []);
   const allPatterns = enginesAsync.data?.scan_patterns ?? [];
 
@@ -97,7 +99,7 @@ function Scanner() {
       allPatterns.length === 0 || selectedNames.size === allPatterns.length;
     setApplied({
       patterns: isAll ? undefined : [...selectedNames],
-      emit,
+      emit: emit && !demo,
     });
   };
 
@@ -194,10 +196,12 @@ function Scanner() {
         >
           <input
             type="checkbox"
-            checked={emit}
+            checked={emit && !demo}
+            disabled={demo}
+            title={demo ? DEMO_WRITE_TITLE : undefined}
             onChange={(e) => setEmit(e.target.checked)}
           />
-          EMIT
+          {demo ? "save hits" : "EMIT"}
         </label>
 
         {/* scan button */}
@@ -219,6 +223,7 @@ function Scanner() {
         </button>
       </div>
 
+      <DemoWriteNote text="Read-only demo — saving hits as signals is disabled; scanning works." style={{ padding: "2px 10px" }} />
       {loading && !d && <PanelState kind="loading" message="scanning…" />}
       {error && <PanelState kind="error" message={error} onRetry={() => setRetryKey((k) => k + 1)} />}
 

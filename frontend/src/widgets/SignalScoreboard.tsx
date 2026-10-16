@@ -7,6 +7,7 @@
 import { useState } from "react";
 
 import { api } from "../api/client";
+import { NOT_IN_SNAPSHOT, DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -31,6 +32,7 @@ function Th({ children, w }: { children: React.ReactNode; w?: number }) {
 }
 
 function SignalScoreboard() {
+  const demo = useDemoMode();
   // Bumping retryKey re-runs useAsync's fetch — it's already part of the
   // hook's public contract (any deps change re-triggers the effect), so
   // Retry needs no change to useAsync.ts itself.
@@ -40,6 +42,7 @@ function SignalScoreboard() {
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
   const seed = async () => {
+    if (demo) return;
     setSeeding(true);
     setSeedMsg(null);
     try {
@@ -82,11 +85,12 @@ function SignalScoreboard() {
 
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         {rows.length === 0 ? (
-          <PanelState kind="empty" message="No signals logged yet." guidance={deckLine("signal-scoreboard")} fill>
+          <PanelState kind="empty" message={demo ? NOT_IN_SNAPSHOT : "No signals logged yet."} guidance={deckLine("signal-scoreboard")} fill>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginTop: 10 }}>
               <button
                 onClick={seed}
-                disabled={seeding}
+                disabled={seeding || demo}
+                title={demo ? DEMO_WRITE_TITLE : undefined}
                 style={{ padding: "5px 12px", background: theme.panelHeader, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 4, cursor: seeding ? "default" : "pointer", fontSize: theme.fontSize.micro }}
               >
                 {seeding ? "seeding…" : "Seed reference factors"}
@@ -94,6 +98,7 @@ function SignalScoreboard() {
               <div style={{ fontSize: theme.fontSize.micro, color: theme.muted, maxWidth: 280, lineHeight: 1.4 }}>
                 Computes 12-1 momentum + a low-vol factor over your portfolio, then grades them vs realised forward returns.
               </div>
+              <DemoWriteNote />
               {seedMsg && <div style={{ fontSize: theme.fontSize.micro, color: theme.text }}>{seedMsg}</div>}
             </div>
           </PanelState>

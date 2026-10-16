@@ -8,6 +8,7 @@ import { useState } from "react";
 
 import { api } from "../api/client";
 import type { BreadthMarket } from "../api/types";
+import { useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -131,6 +132,7 @@ function BreadthRow({ row, isPrimary }: { row: BreadthMarket; isPrimary: boolean
 // ── main widget ───────────────────────────────────────────────────────────────
 
 export function BreadthBoard() {
+  const demo = useDemoMode();
   // Bumping retryKey re-runs useAsync's fetch — it's already part of the
   // hook's public contract (any deps change re-triggers the effect), so
   // Retry needs no change to useAsync.ts itself.
@@ -214,7 +216,7 @@ export function BreadthBoard() {
               </tr>
             </thead>
             <tbody>
-              {d.markets.map((row) => (
+              {d.markets.filter((row) => !demo || row.issues !== null || row.breadth_pct !== null).map((row) => (
                 <BreadthRow
                   key={row.market}
                   row={row}

@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { AlgoStatus, AlgoStrategy, AlgoStrategyCreate } from "../api/types";
+import { NOT_IN_SNAPSHOT, DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
 import { deckLine } from "./help";
@@ -42,6 +43,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function StrategyPanel() {
+  const demo = useDemoMode();
   const [status, setStatus] = useState<AlgoStatus | null>(null);
   const [strategies, setStrategies] = useState<AlgoStrategy[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -90,6 +92,7 @@ function StrategyPanel() {
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (demo) return;
     setCreating(true);
     setErr(null);
     const sid = signalId || signalIds[0] || "";
@@ -116,6 +119,7 @@ function StrategyPanel() {
   };
 
   const act = async (s: AlgoStrategy, action: "start" | "pause") => {
+    if (demo) return;
     setBusy(s.id);
     try {
       await api.algoStrategyAction(s.id, action);
@@ -128,6 +132,7 @@ function StrategyPanel() {
   };
 
   const del = async (s: AlgoStrategy) => {
+    if (demo) return;
     setBusy(s.id);
     try {
       await api.algoDeleteStrategy(s.id);
@@ -143,6 +148,7 @@ function StrategyPanel() {
   const engineOk = status?.worker_heartbeat_fresh === true;
 
   const toggleKill = async () => {
+    if (demo) return;
     setKilling(true);
     setErr(null);
     try {
@@ -159,6 +165,7 @@ function StrategyPanel() {
   // Resume needs no confirmation (matches prior behaviour); engaging the kill
   // switch is safety-critical, so it stays a deliberate two-step click.
   const handleKillClick = () => {
+    if (demo) return; // kill switch is disabled in demo, never confirm-then-refuse
     if (killed) {
       void toggleKill();
       return;
@@ -184,7 +191,7 @@ function StrategyPanel() {
         }}
       >
         <span style={{ fontSize: theme.fontSize.micro, color: theme.muted, display: "flex", alignItems: "center", gap: 6 }}>
-          <span title={engineOk ? "worker heartbeat fresh" : "worker heartbeat stale"} style={{ color: engineOk ? theme.up : theme.down }}>
+          <span title={engineOk ? "worker heartbeat fresh" : "worker heartbeat stale"} style={{ color: engineOk ? theme.up : demo ? theme.muted : theme.down }}>
             ●
           </span>
           ENGINE {status?.broker ?? ""}
@@ -198,7 +205,8 @@ function StrategyPanel() {
               e.currentTarget.blur();
             }
           }}
-          disabled={killing}
+          disabled={killing || demo}
+          title={demo ? DEMO_WRITE_TITLE : undefined}
           style={{
             padding: "4px 12px",
             background: killed ? theme.panelHeader : confirmingKill ? theme.down : "rgba(248,81,73,0.12)",
@@ -215,6 +223,7 @@ function StrategyPanel() {
       </div>
 
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <DemoWriteNote />
         {err && <InlineError msg={err} />}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -241,11 +250,11 @@ function StrategyPanel() {
               </span>
               <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                 {s.status === "running" || s.status === "active" ? (
-                  <button onClick={() => act(s, "pause")} disabled={busy === s.id} style={ctrlBtn}>
+                  <button onClick={() => act(s, "pause")} disabled={busy === s.id || demo} title={demo ? DEMO_WRITE_TITLE : undefined} style={ctrlBtn}>
                     PAUSE
                   </button>
                 ) : (
-                  <button onClick={() => act(s, "start")} disabled={busy === s.id} style={ctrlBtn}>
+                  <button onClick={() => act(s, "start")} disabled={busy === s.id || demo} title={demo ? DEMO_WRITE_TITLE : undefined} style={ctrlBtn}>
                     START
                   </button>
                 )}
@@ -265,7 +274,8 @@ function StrategyPanel() {
                       e.currentTarget.blur();
                     }
                   }}
-                  disabled={busy === s.id}
+                  disabled={busy === s.id || demo}
+                  title={demo ? DEMO_WRITE_TITLE : undefined}
                   style={
                     confirmingDeleteId === s.id
                       ? { ...ctrlBtn, color: theme.bg, background: theme.down, border: `1px solid ${theme.down}` }
@@ -277,7 +287,7 @@ function StrategyPanel() {
               </span>
             </div>
           ))}
-          {!strategies.length && <div style={{ fontSize: theme.fontSize.micro, color: theme.muted }}>No strategies yet — create one below.</div>}
+          {!strategies.length && <div style={{ fontSize: theme.fontSize.micro, color: theme.muted }}>{demo ? NOT_IN_SNAPSHOT : "No strategies yet — create one below."}</div>}
         </div>
 
         <form onSubmit={create} style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: `1px solid ${theme.grid}`, paddingTop: 8 }}>
@@ -324,7 +334,8 @@ function StrategyPanel() {
           </div>
           <button
             type="submit"
-            disabled={creating || !signalIds.length}
+            disabled={demo || creating || !signalIds.length}
+            title={demo ? DEMO_WRITE_TITLE : undefined}
             style={{
               alignSelf: "flex-start",
               padding: "5px 14px",

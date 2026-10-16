@@ -34,7 +34,25 @@ function stateColor(state: string): string {
 
 // The score itself now leads in PanelHead's figure; this badge is just the
 // qualitative state read (risk-on/off/neutral) that goes with it.
-function StateBadge({ state }: { state: string }) {
+function StateBadge({ state, noReading }: { state: string; noReading?: boolean }) {
+  if (noReading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", padding: "6px 0 4px" }}>
+        <span
+          style={{
+            fontSize: theme.fontSize.micro,
+            letterSpacing: "0.08em",
+            color: theme.muted,
+            border: `1px dashed ${theme.border}`,
+            borderRadius: 3,
+            padding: "2px 8px",
+          }}
+        >
+          NO READING
+        </span>
+      </div>
+    );
+  }
   const color = stateColor(state);
   return (
     <div style={{ display: "flex", justifyContent: "center", padding: "6px 0 4px" }}>
@@ -102,7 +120,7 @@ function ComponentBar({ c }: { c: RegimeComponent }) {
           />
         )}
       </div>
-      <span className="num" style={{ width: 36, textAlign: "right", color: isPos ? theme.up : theme.down }}>
+      <span className="num" style={{ width: 36, textAlign: "right", color: c.score === null ? theme.muted : isPos ? theme.up : theme.down }}>
         {fmtNum(c.score)}
       </span>
     </div>
@@ -119,11 +137,14 @@ function RegimeComposite() {
   if (error) return <PanelState kind="error" message={error} onRetry={() => setRetryKey((k) => k + 1)} />;
   const d = env?.data;
   if (!d) return <PanelState kind="empty" message="no data" />;
+  // No component has a value → there is no verdict to show (a NEUTRAL badge
+  // would read as a real reading), and null scores must not draw coloured dashes.
+  const noReading = d.components.every((c) => c.score === null && c.value === null);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <PanelHead
-        figure={d.score !== null ? fmtNum(d.score) : undefined}
+        figure={!noReading && d.score !== null ? fmtNum(d.score) : undefined}
         deck={deckLine("market-regime")}
         agate={
           env && (
@@ -150,10 +171,10 @@ function RegimeComposite() {
         }}
       >
         {/* headline state badge */}
-        <StateBadge state={d.state} />
+        <StateBadge state={d.state} noReading={noReading} />
 
         {/* component bars */}
-        {d.components.length > 0 && (
+        {!noReading && d.components.length > 0 && (
           <div style={{ flexShrink: 0, borderTop: `1px solid ${theme.grid}`, paddingTop: 5, marginBottom: 6 }}>
             <div style={{ fontSize: theme.fontSize.micro, color: theme.muted, letterSpacing: "0.05em", marginBottom: 3 }}>
               COMPONENTS

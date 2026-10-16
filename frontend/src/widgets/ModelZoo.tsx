@@ -16,6 +16,7 @@ import {
 
 import { ApiError, api, labStreamUrl } from "../api/client";
 import type { Envelope, LabJob, ModelReport } from "../api/types";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { JobStatus } from "./JobStatus";
@@ -326,6 +327,7 @@ function ModelReportView({ env }: { env: Envelope<ModelReport> }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 function ModelZoo() {
+  const demo = useDemoMode();
   const enginesAsync = useAsync(() => api.labEngines(), []);
   const engines = enginesAsync.data?.engines ?? FALLBACK_ENGINES;
   const defaultEngine = enginesAsync.data?.default_engine ?? engines[0] ?? "sklearn-ensemble";
@@ -366,6 +368,7 @@ function ModelZoo() {
   useEffect(refreshRecent, []);
 
   const launch = async () => {
+    if (demo) return;
     setLaunching(true);
     setErr(null);
     setReport(null);
@@ -428,7 +431,7 @@ function ModelZoo() {
             : undefined
         }
         deck={deckLine("lab-models")}
-        agate={<span style={{ letterSpacing: "0.06em" }}>OFF-API</span>}
+        agate={<span style={{ letterSpacing: "0.06em" }}>{demo ? "BACKGROUND JOB" : "OFF-API"}</span>}
       />
 
       <div
@@ -508,7 +511,8 @@ function ModelZoo() {
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             onClick={launch}
-            disabled={launching}
+            disabled={launching || demo}
+            title={demo ? DEMO_WRITE_TITLE : undefined}
             style={{
               padding: "5px 14px",
               background: theme.panelHeader,
@@ -523,6 +527,7 @@ function ModelZoo() {
           </button>
         </div>
 
+        <DemoWriteNote />
         {err && <InlineError msg={err} />}
 
         {/* live progress */}

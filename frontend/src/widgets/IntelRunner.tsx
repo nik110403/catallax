@@ -4,6 +4,7 @@
 import { useState } from "react";
 
 import { ApiError, api, intelStreamUrl } from "../api/client";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { JobStatus } from "./JobStatus";
@@ -12,12 +13,14 @@ import { registerWidget } from "./registry";
 import { InlineError } from "./InlineError";
 
 function IntelRunner() {
+  const demo = useDemoMode();
   const [jobId, setJobId] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [last, setLast] = useState<string | null>(null);
 
   const run = async () => {
+    if (demo) return;
     setLaunching(true);
     setErr(null);
     setLast(null);
@@ -35,17 +38,19 @@ function IntelRunner() {
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <PanelHead
         deck={deckLine("ai-intel-runner")}
-        agate={<span style={{ letterSpacing: "0.06em" }}>NEWS ENRICHMENT · OFF-API</span>}
+        agate={<span style={{ letterSpacing: "0.06em" }}>NEWS ENRICHMENT · {demo ? "BACKGROUND JOB" : "OFF-API"}</span>}
       >
         <button
           onClick={run}
-          disabled={launching}
+          disabled={launching || demo}
+          title={demo ? DEMO_WRITE_TITLE : undefined}
           style={{ padding: "5px 14px", background: theme.panelHeader, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 4, cursor: launching ? "default" : "pointer", fontSize: theme.fontSize.micro }}
         >
           {launching ? "ENQUEUING…" : "ENRICH NOW"}
         </button>
       </PanelHead>
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "8px 10px" }}>
+        <DemoWriteNote />
         {err && <InlineError msg={err} />}
 
         {jobId && (

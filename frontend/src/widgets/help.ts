@@ -1,3 +1,4 @@
+import { isDemoMode } from "../demo";
 // Central help-text registry for the panel ⓘ button. Keyed by widget id; the
 // Panel shows `def.help ?? WIDGET_HELP[id]` (a widget can override inline via its
 // definition's `help` field — see registry.ts). Plain text; a blank line
@@ -17,6 +18,7 @@
 // future widget from rendering an empty caption instead of erroring loudly).
 // Signature is unchanged: every existing `deckLine(id)` call site is untouched.
 export function deckLine(id: string): string {
+  if (isDemoMode() && DEMO_DECK[id]) return DEMO_DECK[id];
   if (WIDGET_DECK[id]) return WIDGET_DECK[id];
   const text = WIDGET_HELP[id];
   if (!text) return "";
@@ -24,6 +26,19 @@ export function deckLine(id: string): string {
   const sentence = paragraph.match(/^.*?\.(?=\s|$)/);
   return sentence ? sentence[0] : paragraph;
 }
+
+// Hosted demo serves a cached snapshot, not a live feed: decks that promise
+// "live"/"right now"/"today" are reworded there (demo mode only — deckLine).
+const DEMO_DECK: Record<string, string> = {
+  holdings: "How each position performed in the snapshot",
+  quotes: "Prices for the symbols tracked, as of the snapshot",
+  "markets-board": "How every major asset class traded in the snapshot",
+  "market-regime": "Which forces drove the snapshot's risk-on, risk-off tilt",
+  "market-cross-asset": "How correlated different asset classes were in the snapshot",
+  "lab-scanner": "Which symbols showed a chart pattern in the snapshot",
+  "algo-blotter": "Status of every paper order and fill",
+  "algo-strategies": "Which signal-driven strategies are configured, and a kill switch",
+};
 
 // Explicit deck copy, one per WIDGET_HELP id (kept 1:1 — see deckLine above).
 // 6–10 words, sentence case, no trailing period, meaning not enumeration.

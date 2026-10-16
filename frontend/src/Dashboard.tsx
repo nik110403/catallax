@@ -10,6 +10,7 @@ import type { Layout } from "react-grid-layout";
 import { panelUid, usePresets, type PanelInstance } from "./layouts";
 import type { PendingAction } from "./navigation";
 import { theme } from "./theme";
+import { useDemoMode } from "./demo";
 import { WidgetCatalog } from "./WidgetCatalog";
 import { WIDGET_HELP } from "./widgets/help";
 import { Panel } from "./widgets/Panel";
@@ -398,6 +399,9 @@ export function Dashboard({
   // it; losing focus or Escape disarms without acting.
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [resetConfirm, setResetConfirm] = useState(false);
+  // Demo: layout edits can't persist (remoteStore swallows the 403), so the
+  // toolbar is hidden rather than offered.
+  const demo = useDemoMode();
   const onDeleteClick = () => {
     if (presets.length <= 1) return;
     if (deleteConfirm) {
@@ -418,6 +422,7 @@ export function Dashboard({
 
   return (
     <div className="grid-wrap">
+      {!demo && (
       <div className="layout-bar">
         <span className="layout-bar-label">LAYOUT</span>
         <select value={activeId} onChange={(e) => switchPreset(e.target.value)} title="Switch layout preset" aria-label="layout preset">
@@ -498,6 +503,7 @@ export function Dashboard({
           {resetConfirm ? "sure?" : "reset"}
         </button>
       </div>
+      )}
       <WidgetCatalog open={catalogOpen} onClose={() => setCatalogOpen(false)} onAdd={addWidget} />
       <Grid
         className="layout"

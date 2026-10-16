@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, READ_ONLY_DEMO_MESSAGE, api, isReadOnlyDemoError } from "../api/client";
 import { InlineError } from "./InlineError";
 import type { CockpitJob, CockpitMessage, CockpitSession } from "../api/types";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { PanelHead } from "./PanelHead";
 import { PanelState } from "./PanelState";
@@ -136,6 +137,7 @@ function CockpitProgress({ jobId, onComplete, onFailed }: { jobId: string; onCom
 }
 
 function Cockpit() {
+  const demo = useDemoMode();
   const [sessions, setSessions] = useState<CockpitSession[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<CockpitMessage[]>([]);
@@ -184,6 +186,7 @@ function Cockpit() {
   }, [selected, disabled]);
 
   const ask = async () => {
+    if (demo) return;
     const question = text.trim(); if (!question || (selected && !sessionReady) || submitLock.current || activeJob || jobFailure || uncertainSession) return;
     submitLock.current = true;
     setSubmitting(true);
@@ -242,7 +245,7 @@ function Cockpit() {
       {messages.length ? <Transcript messages={messages} /> : <PanelState kind="empty" message="Ask a question about the record" hint="Answers cite the records they use; the cockpit cannot write or execute." />}
       {activeJob && <div role="status">{selected !== activeJob.sessionKey && "A question is still processing in another session. "}<CockpitProgress key={activeJob.jobId} jobId={activeJob.jobId} onComplete={() => { refreshJobSession(activeJob.sessionKey); rememberJob(null); }} onFailed={(message) => { refreshJobSession(activeJob.sessionKey); setJobFailure(message); }} /></div>}
       {jobFailure && <PanelState kind="error" message={`Question failed: ${jobFailure}. Review the transcript; no answer was produced. Retry this question only after checking the transcript.`}><button type="button" style={buttonStyle} onClick={() => { rememberJob(null); setJobFailure(null); }}>Acknowledge failure and enable ASK</button></PanelState>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: `1px solid ${theme.border}`, paddingTop: 8 }}><label htmlFor="cockpit-question" style={{ color: theme.muted, fontSize: theme.fontSize.micro }}>QUESTION FOR ANALYST</label><div style={{ display: "flex", gap: 6 }}><textarea id="cockpit-question" value={text} onChange={(event) => setText(event.target.value)} placeholder="Ask about your portfolio, reports, forecasts, journal, or notes" rows={2} style={{ flex: 1, minWidth: 0, resize: "vertical", background: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 3, fontFamily: theme.fontMono, fontSize: theme.fontSize.base, padding: "5px 7px" }} /><button type="button" style={{ ...buttonStyle, flexShrink: 0, color: theme.accent, borderColor: theme.accent }} disabled={!text.trim() || (!!selected && !sessionReady) || submitting || !!activeJob || !!jobFailure || !!uncertainSession} onClick={() => void ask()}>ASK</button></div></div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: `1px solid ${theme.border}`, paddingTop: 8 }}><DemoWriteNote text="Read-only demo — questions to the analyst are disabled; the terminal answers them locally." /><label htmlFor="cockpit-question" style={{ color: theme.muted, fontSize: theme.fontSize.micro }}>QUESTION FOR ANALYST</label><div style={{ display: "flex", gap: 6 }}><textarea id="cockpit-question" value={text} onChange={(event) => setText(event.target.value)} placeholder="Ask about your portfolio, reports, forecasts, journal, or notes" rows={2} style={{ flex: 1, minWidth: 0, resize: "vertical", background: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 3, fontFamily: theme.fontMono, fontSize: theme.fontSize.base, padding: "5px 7px" }} /><button type="button" style={{ ...buttonStyle, flexShrink: 0, color: theme.accent, borderColor: theme.accent }} disabled={demo || !text.trim() || (!!selected && !sessionReady) || submitting || !!activeJob || !!jobFailure || !!uncertainSession} title={demo ? DEMO_WRITE_TITLE : undefined} onClick={() => void ask()}>ASK</button></div></div>
     </>}
   </div></div>;
 }

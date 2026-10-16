@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getSession, onUnauthorized } from "./api/client";
+import { setDemoMode } from "./demo";
 import type { Session } from "./api/types";
 import { CommandPalette } from "./CommandPalette";
 import { Dashboard, aiSeed, algoSeed, backtestSeed, homeSeed, journalSeed, notesSeed, macroSeed, marketResearchSeed, marketsSeed, personalSeed, quantLabSeed, ratesSeed, reportsSeed, researchSeed, riskSeed, signalsSeed } from "./Dashboard";
@@ -96,6 +97,8 @@ export default function App() {
     getSession()
       .then((s) => {
         if (!alive.current) return;
+        // Publish before the shell mounts so every widget reads the flag synchronously.
+        setDemoMode(!!s.demo_mode);
         setBoot({ phase: "ready", session: s });
         setLocked(s.auth_required && !s.authenticated);
       })
@@ -302,7 +305,11 @@ function AppShell({ session }: { session: Session }) {
             {session.owner_name ? `${greeting()}, ${session.owner_name}` : greeting()}
           </span>
           <span className="app-health">
-            {health.phase === "ok" ? (
+            {health.phase === "ok" && session.demo_mode ? (
+              <span className="demo-chip" title="Read-only demo running on a cached data snapshot">
+                DEMO · snapshot
+              </span>
+            ) : health.phase === "ok" ? (
               <>
                 db {dot(health.db)} &nbsp;redis {dot(health.redis)}
               </>

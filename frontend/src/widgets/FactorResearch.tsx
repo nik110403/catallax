@@ -19,6 +19,7 @@ import {
 
 import { ApiError, api, labStreamUrl } from "../api/client";
 import type { Envelope, FactorReport, LabJob } from "../api/types";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { JobStatus } from "./JobStatus";
@@ -313,6 +314,7 @@ function FactorReportView({ env }: { env: Envelope<FactorReport> }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 function FactorResearch() {
+  const demo = useDemoMode();
   const enginesAsync = useAsync(() => api.labEngines(), []);
   const factors = enginesAsync.data?.factors ?? FALLBACK_FACTORS;
 
@@ -344,6 +346,7 @@ function FactorResearch() {
   useEffect(refreshRecent, []);
 
   const launch = async () => {
+    if (demo) return;
     setLaunching(true);
     setErr(null);
     setReport(null);
@@ -401,7 +404,7 @@ function FactorResearch() {
       <PanelHead
         figure={report ? fmt3(report.data.ic_mean) : undefined}
         deck={deckLine("lab-factor")}
-        agate={<span style={{ letterSpacing: "0.06em" }}>OFF-API</span>}
+        agate={<span style={{ letterSpacing: "0.06em" }}>{demo ? "BACKGROUND JOB" : "OFF-API"}</span>}
       />
 
       <div
@@ -465,7 +468,8 @@ function FactorResearch() {
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             onClick={launch}
-            disabled={launching}
+            disabled={launching || demo}
+            title={demo ? DEMO_WRITE_TITLE : undefined}
             style={{
               padding: "5px 14px",
               background: theme.panelHeader,
@@ -480,6 +484,7 @@ function FactorResearch() {
           </button>
         </div>
 
+        <DemoWriteNote />
         {err && <InlineError msg={err} />}
 
         {/* live progress */}

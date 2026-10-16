@@ -9,6 +9,7 @@ import { useState } from "react";
 
 import { api, getSession } from "../api/client";
 import { requestNav } from "../navigation";
+import { humanLabel, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -19,6 +20,7 @@ import { useAsync } from "./useAsync";
 import { noReportCopy } from "./reportsShared";
 
 function ReportArchive(_props: WidgetProps<Record<string, never>>) {
+  const demo = useDemoMode();
   const [retryKey, setRetryKey] = useState(0);
   const [opened, setOpened] = useState<string | null>(null);
   const { data, loading, error } = useAsync(() => api.reportWeeks(), [retryKey]);
@@ -73,7 +75,7 @@ function ReportArchive(_props: WidgetProps<Record<string, never>>) {
                       this row, not a second clickable target inside it. */}
                   {(avail?.pack || avail?.pdf) && (
                     <span style={{ fontSize: theme.fontSize.micro, color: theme.muted }}>
-                      {[avail?.pack && "pack", avail?.pdf && "pdf"].filter(Boolean).join(" · ")}
+                      {[avail?.pack && (demo ? humanLabel("pack") : "pack"), avail?.pdf && "pdf"].filter(Boolean).join(" · ")}
                     </span>
                   )}
                   {i === 0 && (

@@ -21,6 +21,7 @@
 import { useId, useRef, useState } from "react";
 
 import { ApiError, notifyUnauthorized, readOnlyDemoError } from "../api/client";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
 import { PanelHead } from "./PanelHead";
@@ -201,6 +202,7 @@ export function JournalEntryForm({
   onEmitted?: (result: { entry: JournalEntry; forecast: JournalForecastSummary }) => void;
   onCancel?: () => void;
 }) {
+  const demo = useDemoMode();
   const [view, setView] = useState(prefill?.view ?? "");
   const [probability, setProbability] = useState(prefill?.probability !== undefined ? String(prefill.probability) : "");
   const [reviewDate, setReviewDate] = useState(prefill?.review_date ?? "");
@@ -234,6 +236,7 @@ export function JournalEntryForm({
   const anyInvalid = viewInvalid || probabilityInvalid || reviewDateInvalid || subjectInvalid;
 
   const submit = async () => {
+    if (demo) return; // before validation: never make the visitor fix a form for nothing
     if (anyInvalid) {
       setTouched({ view: true, probability: true, reviewDate: true, subject: true });
       if (viewInvalid) {
@@ -482,10 +485,12 @@ export function JournalEntryForm({
         </div>
       </details>
 
+      <DemoWriteNote />
       <div style={{ display: "flex", gap: 8 }}>
         <button
           type="button"
-          disabled={submitting || !!emitted}
+          disabled={demo || submitting || !!emitted}
+          title={demo ? DEMO_WRITE_TITLE : undefined}
           onClick={() => void submit()}
           style={{
             padding: "6px 14px",

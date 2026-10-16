@@ -5,6 +5,7 @@ import { LOCALE } from "../format";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
+import { useDemoMode } from "../demo";
 import type { WidgetProps } from "./registry";
 import { registerWidget } from "./registry";
 
@@ -13,6 +14,7 @@ interface QuotesConfig {
 }
 
 function Quotes({ config }: WidgetProps<QuotesConfig>) {
+  const demo = useDemoMode();
   const ticks = useTicker(config.symbols);
   // Colour vs session-baseline (first observed price), so direction persists.
   const base = useRef<Record<string, number>>({});
@@ -29,6 +31,7 @@ function Quotes({ config }: WidgetProps<QuotesConfig>) {
               const px = t?.price ? Number(t.price) : undefined;
               if (px !== undefined && base.current[sym] === undefined) base.current[sym] = px;
               const b = base.current[sym];
+              if (demo && t?.error) return null; // demo: only symbols with data
               const cls =
                 px !== undefined && b !== undefined
                   ? px > b

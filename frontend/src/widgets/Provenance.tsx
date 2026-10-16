@@ -3,6 +3,7 @@
 // source failed → last-good shown). Hover shows source + any warnings (e.g. a
 // missing FRED key). Reused across the macro widgets.
 import { formatDateTime } from "../format";
+import { useDemoMode } from "../demo";
 import { theme } from "../theme";
 
 export function Provenance({
@@ -18,10 +19,12 @@ export function Provenance({
   warnings?: string[];
   fetchedAt?: string;
 }) {
-  const color = stale ? theme.down : cacheHit ? theme.muted : theme.up;
+  // Snapshot data is stale by construction: grey, not red, in the hosted demo.
+  const demo = useDemoMode();
+  const color = stale && !demo ? theme.down : cacheHit ? theme.muted : theme.up;
   const bits = [
     `source: ${source}`,
-    stale ? "stale (last good)" : cacheHit ? "cached" : "live",
+    stale ? (demo ? "snapshot" : "stale (last good)") : cacheHit ? "cached" : "live",
     ...(fetchedAt ? [`as of ${formatDateTime(fetchedAt)}`] : []),
     ...(warnings ?? []),
   ];

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { AlgoOrder, AlgoOrderSpec } from "../api/types";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { LOCALE } from "../format";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
@@ -31,6 +32,7 @@ const fieldStyle: React.CSSProperties = {
 };
 
 function OrderTicket() {
+  const demo = useDemoMode();
   const [symbol, setSymbol] = useState("AAPL");
   const [side, setSide] = useState<Side>("buy");
   const [type, setType] = useState<OrderType>("market");
@@ -77,6 +79,7 @@ function OrderTicket() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (demo) return;
     setSubmitting(true);
     setErr(null);
     setLast(null);
@@ -106,6 +109,7 @@ function OrderTicket() {
   // Resume is non-destructive (just clears the kill flag), so no confirm dialog —
   // fire-and-refetch, same pattern as cancel() in OrdersBlotter.
   const resume = async () => {
+    if (demo) return;
     setResuming(true);
     try {
       await api.algoResume();
@@ -150,7 +154,8 @@ function OrderTicket() {
             <button
               type="button"
               onClick={resume}
-              disabled={resuming}
+              disabled={resuming || demo}
+              title={demo ? DEMO_WRITE_TITLE : undefined}
               style={{
                 background: "transparent",
                 border: `1px solid ${theme.down}`,
@@ -167,6 +172,7 @@ function OrderTicket() {
           </div>
         )}
 
+        <DemoWriteNote />
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <label style={fieldStyle}>
@@ -236,7 +242,8 @@ function OrderTicket() {
 
           <button
             type="submit"
-            disabled={submitting || !symbol.trim() || limitPriceInvalid}
+            disabled={demo || submitting || !symbol.trim() || limitPriceInvalid}
+            title={demo ? DEMO_WRITE_TITLE : undefined}
             style={{
               padding: "6px 14px",
               background: theme.panelHeader,

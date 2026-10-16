@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import { api } from "../api/client";
 import type { CrossAssetSnapshot, RatioItem } from "../api/types";
+import { useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -97,6 +98,7 @@ function RatioRow({ r }: { r: RatioItem }) {
 }
 
 function CrossAssetMatrix() {
+  const demo = useDemoMode();
   // Bumping retryKey re-runs useAsync's fetch — it's already part of the
   // hook's public contract (any deps change re-triggers the effect), so
   // Retry needs no change to useAsync.ts itself.
@@ -151,7 +153,7 @@ function CrossAssetMatrix() {
           <span style={{ width: 44, textAlign: "right" }}>1M</span>
           <span style={{ width: 44, textAlign: "right" }}>YTD</span>
         </div>
-        {d.snapshot.map((s) => (
+        {d.snapshot.filter((s) => !demo || s.last !== null).map((s) => (
           <SnapshotRow key={s.symbol} s={s} />
         ))}
         </div>

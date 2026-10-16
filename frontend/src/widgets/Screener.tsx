@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { api } from "../api/client";
 import type { ScreenFilters } from "../api/types";
+import { useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -54,6 +55,7 @@ function fmtOpt(v: number | null, dp = 1): string {
 
 // No widget props — filter state is session-local; config persists nothing.
 function Screener() {
+  const demo = useDemoMode();
   const [minFInput, setMinFInput] = useState("");
   const [maxPEInput, setMaxPEInput] = useState("");
   const [minDivInput, setMinDivInput] = useState("");
@@ -218,7 +220,7 @@ function Screener() {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row) => (
+            {sorted.filter((row) => !demo || row.price !== null || row.pe !== null || row.f_score !== null).map((row) => (
               <tr key={row.symbol}>
                 <td
                   style={{

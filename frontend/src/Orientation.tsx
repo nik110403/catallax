@@ -14,6 +14,11 @@ const ORIENTATION_KEY = "catallax.orientation.v1";
 // from SECTIONS itself so these can't drift from the real nav labels. Home
 // isn't a Section (sections.ts: "Home is its own implicit section"), so it
 // gets its own fixed row below.
+// Demo mode serves a cached snapshot, so "live" copy is reworded there.
+const DEMO_BLURB: Record<string, string> = {
+  markets: "A cross-asset board, the macro dashboard, rates, and market research — from a data snapshot.",
+};
+
 const SECTION_BLURB: Record<string, string> = {
   portfolio: "Your holdings, allocation, and a risk lens on the whole book.",
   markets: "A live cross-asset board, the macro dashboard, rates, and market research.",
@@ -105,7 +110,7 @@ export function Orientation({
           {SECTIONS.map((s) => (
             <div className="orientation-row" key={s.slug}>
               <span className="orientation-section-name">{s.name}</span>
-              <span className="orientation-section-desc">{SECTION_BLURB[s.slug]}</span>
+              <span className="orientation-section-desc">{(demoMode && DEMO_BLURB[s.slug]) || SECTION_BLURB[s.slug]}</span>
             </div>
           ))}
         </div>

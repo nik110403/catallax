@@ -3,6 +3,8 @@
 import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useDemoMode } from "../demo";
+
 // ⓘ button + hover/click help popover. The popover is portalled to <body> at a
 // fixed position computed from the button, so the panel's `overflow:hidden` (and
 // any short panel) can never clip it. Hover or keyboard-focus opens it; click
@@ -72,15 +74,18 @@ export function Panel({
   onRemove: () => void;
   children: ReactNode;
 }) {
+  const demo = useDemoMode();
   return (
     <div className="panel">
       <div className="panel-header">
         <span className="panel-title" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
         <span className="spacer" />
         {help && <HelpButton text={help} />}
-        <button className="panel-close" title="Remove" aria-label="Close panel" onClick={onRemove}>
-          ×
-        </button>
+        {!demo && (
+          <button className="panel-close" title="Remove" aria-label="Close panel" onClick={onRemove}>
+            ×
+          </button>
+        )}
       </div>
       <div className="panel-body">{children}</div>
     </div>

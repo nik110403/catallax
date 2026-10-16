@@ -8,6 +8,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { BacktestConfigInput, BacktestJob } from "../api/types";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
@@ -47,6 +48,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function BacktestLab() {
+  const demo = useDemoMode();
   const cat = useAsync(() => api.signalCatalog(), []);
   const signalIds = cat.data?.data.signals.map((s) => s.signal_id) ?? [];
 
@@ -81,7 +83,7 @@ function BacktestLab() {
   useEffect(refreshRecent, []);
 
   const launch = async () => {
-    if (!sid) return;
+    if (demo || !sid) return;
     setLaunching(true);
     setErr(null);
     setReportJobId(null);
@@ -123,7 +125,7 @@ function BacktestLab() {
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <PanelHead
         deck={deckLine("backtest-lab")}
-        agate={<span style={{ letterSpacing: "0.06em" }}>SIGNAL-DRIVEN · OFF-API</span>}
+        agate={<span style={{ letterSpacing: "0.06em" }}>SIGNAL-DRIVEN · {demo ? "BACKGROUND JOB" : "OFF-API"}</span>}
       />
 
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -163,7 +165,7 @@ function BacktestLab() {
             </select>
           </Field>
           <Field label="BENCHMARK (opt)">
-            <input style={ctrl} type="text" placeholder="^GSPC" value={benchmark} onChange={(e) => setBenchmark(e.target.value)} />
+            <input style={ctrl} type="text" placeholder={demo ? "S&P 500" : "^GSPC"} value={benchmark} onChange={(e) => setBenchmark(e.target.value)} />
           </Field>
         </div>
 
@@ -175,13 +177,15 @@ function BacktestLab() {
           <span style={{ flex: 1 }} />
           <button
             onClick={launch}
-            disabled={launching || !sid}
+            disabled={demo || launching || !sid}
+            title={demo ? DEMO_WRITE_TITLE : undefined}
             style={{ padding: "5px 14px", background: theme.panelHeader, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 4, cursor: launching || !sid ? "default" : "pointer", fontSize: theme.fontSize.micro }}
           >
             {launching ? "LAUNCHING…" : "RUN BACKTEST"}
           </button>
         </div>
 
+        <DemoWriteNote />
         {err && <InlineError msg={err} />}
 
         {/* ── live progress for the running job ── */}

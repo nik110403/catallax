@@ -28,6 +28,7 @@
 import { useEffect, useRef, useState, useId } from "react";
 
 import { ApiError, notifyUnauthorized, readOnlyDemoError } from "../api/client";
+import { DEMO_WRITE_TITLE, DemoWriteNote, useDemoMode } from "../demo";
 import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
 import { PanelHead } from "./PanelHead";
@@ -209,6 +210,7 @@ const emptyLadder = () => ({
 });
 
 function NoteEditor() {
+  const demo = useDemoMode();
   // Bumped after a successful save/sign so the note-picker dropdown (title,
   // signed status) reflects what was just written — the list fetch itself
   // has no other trigger otherwise (fix-first #12).
@@ -311,6 +313,7 @@ function NoteEditor() {
   });
 
   const save = async (): Promise<boolean> => {
+    if (demo) return false; // before validation: no form-filling for nothing
     if (titleInvalid || oneSentenceInvalid) {
       setTouched({ title: true, oneSentence: true });
       // fix-first #14: focus the first invalid field, same convention
@@ -381,7 +384,7 @@ function NoteEditor() {
   // `saveErr`, not attributed to one evidence row.
   const checkRow = async (i: number) => {
     const row = evidenceRows[i];
-    if (!row || row.id === "" || row.id === undefined) return;
+    if (demo || !row || row.id === "" || row.id === undefined) return;
     if (!slug) {
       setRowState((s) => ({ ...s, [i]: { status: "idle" } }));
       return;
@@ -409,7 +412,7 @@ function NoteEditor() {
   // is dirty, save first; a failed save (validation or network) aborts the
   // sign entirely rather than signing the stale server copy.
   const doSign = async () => {
-    if (!slug) return;
+    if (demo || !slug) return;
     setSigning(true);
     try {
       if (dirty) {
@@ -620,11 +623,13 @@ function NoteEditor() {
           )}
         </div>
 
+        {!signed && <DemoWriteNote />}
         {!signed && (
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || demo}
+              title={demo ? DEMO_WRITE_TITLE : undefined}
               onClick={() => void save()}
               style={{ padding: "6px 14px", background: theme.panelHeader, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 4, cursor: saving ? "default" : "pointer", fontSize: theme.fontSize.micro }}
             >
@@ -633,6 +638,8 @@ function NoteEditor() {
             {slug && !confirmingSign && (
               <button
                 type="button"
+                disabled={demo}
+                title={demo ? DEMO_WRITE_TITLE : undefined}
                 onClick={() => setConfirmingSign(true)}
                 style={{ padding: "6px 14px", background: "transparent", color: theme.up, border: `1px solid ${theme.up}`, borderRadius: 4, cursor: "pointer", fontSize: theme.fontSize.micro }}
               >

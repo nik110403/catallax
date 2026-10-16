@@ -120,6 +120,13 @@ body {
   font-size: var(--fs-micro);
   color: var(--muted);
 }
+.demo-chip {
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
 .app-greeting {
   font-size: var(--fs-micro);
   color: var(--muted);

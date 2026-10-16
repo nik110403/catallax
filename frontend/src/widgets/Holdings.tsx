@@ -80,7 +80,7 @@ function Holdings({ config, onConfigChange }: WidgetProps<HoldingsConfig>) {
               <tr style={{ color: theme.muted, fontSize: theme.fontSize.micro }}>
                 <th style={thL}>ASSET</th>
                 <th style={thR}>QTY</th>
-                <th style={thR}>VALUE</th>
+                <th style={thR}>VALUE ({cur})</th>
               </tr>
             </thead>
             <tbody>
@@ -96,7 +96,7 @@ function Holdings({ config, onConfigChange }: WidgetProps<HoldingsConfig>) {
                     {fmt(r.quantity, 4)}
                   </td>
                   <td className="num" style={tdR}>
-                    {fmt(r.value, 0)} <span style={{ fontSize: theme.fontSize.micro, color: theme.muted }}>{cur}</span>
+                    {fmt(r.value, 0)}
                   </td>
                 </tr>
               ))}
