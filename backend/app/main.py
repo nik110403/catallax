@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.auth import ShareGateMiddleware
+from app.auth import DemoReadOnlyMiddleware, ShareGateMiddleware
 from app.auth import router as auth_router
 from app.config import get_settings
 from app.db import dispose_engine, init_engine
@@ -148,6 +148,8 @@ def create_app() -> FastAPI:
     # Pure-ASGI (see app/auth.py docstring) — must wrap the whole app so the
     # WebSocket ticker scope reaches it too (and passes straight through).
     app.add_middleware(ShareGateMiddleware)
+    # Added last = outermost: refuses writes before the share gate or routing.
+    app.add_middleware(DemoReadOnlyMiddleware)
     for module in (
         health,
         prices,

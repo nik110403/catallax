@@ -1,0 +1,10 @@
+[Unit]
+Description=Catallax demo nightly reset at 03:30
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=false
+Unit=catallax-demo-reset.service
+
+[Install]
+WantedBy=timers.target

@@ -16,6 +16,7 @@ from redis.asyncio import Redis
 
 from app.config import Settings
 from app.errors import RateLimitExceeded
+from app.upstream import guard, is_cache_only
 
 
 class Quote(BaseModel):
@@ -76,6 +77,13 @@ class PriceSourceAdapter(ABC):
         cached = await self._cached_quote(symbol)
         if cached is not None:
             return cached
+        if is_cache_only(self._settings):
+            # Demo: never fetch on a miss. Serve the last good quote, else fail
+            # so the fallback chain / caller treats the symbol as unavailable.
+            stale = await self._stale_quote(symbol)
+            if stale is not None:
+                return stale
+            guard(f"{self.name}.get_quote({symbol})", self._settings)
         try:
             await self._enforce_rate_limit()
             quote = await self._fetch_quote(symbol)
@@ -94,6 +102,7 @@ class PriceSourceAdapter(ABC):
     async def get_history(
         self, symbol: str, start: datetime, end: datetime, interval: str
     ) -> list[Candle]:
+        guard(f"{self.name}.get_history({symbol})", self._settings)
         await self._enforce_rate_limit()
         return await self._fetch_history(symbol, start, end, interval)
 
@@ -102,6 +111,8 @@ class PriceSourceAdapter(ABC):
         return symbol
 
     async def search(self, query: str) -> list[SymbolMatch]:
+        if is_cache_only(self._settings):
+            return []
         await self._enforce_rate_limit()
         return await self._search(query)
 

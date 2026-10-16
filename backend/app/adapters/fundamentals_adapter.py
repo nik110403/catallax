@@ -33,6 +33,7 @@ from redis.asyncio import Redis
 from app.adapters.yahoo_symbols import crypto_hint, is_crypto_symbol, to_yahoo_symbol
 from app.config import Settings, get_settings
 from app.redis import get_redis
+from app.upstream import guard
 
 logger = logging.getLogger("catallax.fundamentals")
 
@@ -173,6 +174,7 @@ class FundamentalsAdapter:
         return {}, True
 
     def _build(self, symbol: str, crypto: bool | None = None) -> dict[str, Any]:
+        guard("fundamentals", self.settings)
         import yfinance as yf  # local import: keeps the module import light + mirrors yfinance adapter
 
         # shared mapping: SAP -> SAP.DE; a known equity never becomes `<SYM>-USD`

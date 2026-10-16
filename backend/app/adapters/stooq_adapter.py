@@ -18,6 +18,7 @@ import httpx
 
 from app.adapters.base import Candle, PriceSourceAdapter, Quote, SymbolMatch
 from app.errors import SymbolNotFound, UpstreamError
+from app.upstream import guard
 
 _UA = "Mozilla/5.0 (catallax)"
 
@@ -49,6 +50,7 @@ class StooqAdapter(PriceSourceAdapter):
         return self._settings.stooq_base_url.rstrip("/")
 
     async def _get_csv(self, path: str, params: dict) -> str:
+        guard("stooq", self._settings)
         try:
             # follow_redirects=False: Stooq's CSV endpoints serve directly, so a
             # redirect would only be an upstream change or MITM — don't chase it

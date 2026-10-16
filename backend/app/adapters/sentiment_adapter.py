@@ -28,6 +28,7 @@ from redis.asyncio import Redis
 
 from app.config import Settings, get_settings
 from app.redis import get_redis
+from app.upstream import guard
 
 logger = logging.getLogger("catallax.sentiment")
 
@@ -63,6 +64,7 @@ class SentimentAdapter:
         self.ttl = settings.sentiment_cache_ttl_seconds
 
     def _client(self) -> httpx.AsyncClient:
+        guard("sentiment", self.settings)
         return httpx.AsyncClient(
             timeout=self.settings.openbb_http_timeout,
             headers={"User-Agent": _UA},

@@ -256,6 +256,41 @@ class ShareGateMiddleware:
             await _deny(scope, receive, send)
 
 
+# ── hosted-demo read-only guard ──────────────────────────────────
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+class DemoReadOnlyMiddleware:
+    """Pure-ASGI (same reasons as ShareGateMiddleware). With `DEMO_READONLY`
+    set, refuses every non-GET/HEAD/OPTIONS /api/v1/* request with
+    `403 {"error":"read_only_demo"}` before it reaches any router (DEMO-SPEC
+    §2.2). Flag off = pass-through. WebSocket scopes are untouched (the ticker
+    is read-only). Fails closed on an unexpected error."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        try:
+            block = (
+                scope.get("method", "GET").upper() not in _SAFE_METHODS
+                and _in_scope(_collapse_slashes(scope.get("path", "/")))
+                and get_settings().demo_readonly
+            )
+        except Exception:
+            logger.exception("DemoReadOnlyMiddleware: unexpected error — failing closed")
+            block = True
+        if block:
+            await JSONResponse({"error": "read_only_demo"}, status_code=403)(
+                scope, receive, send
+            )
+            return
+        await self.app(scope, receive, send)
+
+
 # ── /api/v1/auth/* routes (always public — see the exempt list above) ────
 router = APIRouter(prefix="/auth", tags=["auth"])
 

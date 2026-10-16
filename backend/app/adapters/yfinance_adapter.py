@@ -19,6 +19,7 @@ from app.adapters.base import Candle, PriceSourceAdapter, Quote, SymbolMatch
 from app.adapters.yahoo_symbols import to_yahoo_symbol
 from app.config import Settings
 from app.errors import SymbolNotFound, UpstreamError
+from app.upstream import guard
 
 _YAHOO_SEARCH = "https://query1.finance.yahoo.com/v1/finance/search"
 _UA = "Mozilla/5.0 (catallax)"
@@ -70,6 +71,7 @@ class YFinanceAdapter(PriceSourceAdapter):
         return await asyncio.to_thread(self._blocking_quote, symbol)
 
     def _blocking_quote(self, symbol: str) -> Quote:
+        guard("yfinance", self._settings)
         ticker = yf.Ticker(self._yf_symbol(symbol))
         price: float | None = None
         currency: str | None = None

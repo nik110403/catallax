@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from app.config import Settings
+from app.upstream import STALE_SUFFIX, STALE_TTL, guard, is_cache_only
 
 logger = logging.getLogger("catallax.markets")
 
@@ -132,6 +133,7 @@ def _blocking_yf() -> list[MarketGroup]:
     flat = [(g, sym, label) for g, (_, items) in _YF_GROUPS.items() for sym, label in items]
     symbols = [s for _, s, _ in flat]
     try:
+        guard("markets-yfinance")
         data = yf.download(
             tickers=" ".join(symbols),
             # 1mo, not 5d: Yahoo's daily history for the CBOE yield indices
@@ -191,6 +193,7 @@ async def _fetch_crypto(redis: Redis, settings: Settings) -> MarketGroup:
     label_by_id = {cid: tic for cid, tic in _CRYPTO}
     items: list[MarketQuote] = []
     try:
+        guard("markets-coingecko", settings)
         async with httpx.AsyncClient(timeout=10, headers={"User-Agent": _UA}) as client:
             resp = await client.get(
                 f"{settings.coingecko_base_url}/coins/markets",
@@ -262,6 +265,18 @@ async def get_overview(redis: Redis, settings: Settings) -> MarketsOverview:
         except Exception:
             pass
 
+    if is_cache_only(settings):
+        # Demo: serve the last good overview, else an empty one (never cached).
+        stale = await redis.get(_OVERVIEW_KEY + STALE_SUFFIX)
+        if stale is not None:
+            try:
+                return MarketsOverview.model_validate_json(stale)
+            except Exception:
+                pass
+        return MarketsOverview(
+            as_of=datetime.now(timezone.utc), groups=[], composite=_composite([])
+        )
+
     yf_groups, crypto = await asyncio.gather(
         asyncio.to_thread(_blocking_yf),
         _fetch_crypto(redis, settings),
@@ -277,6 +292,8 @@ async def get_overview(redis: Redis, settings: Settings) -> MarketsOverview:
     await redis.set(
         _OVERVIEW_KEY, overview.model_dump_json(), ex=settings.markets_cache_ttl_seconds
     )
+    if groups:  # long-lived copy for cache-only mode; never overwrite it with nothing
+        await redis.set(_OVERVIEW_KEY + STALE_SUFFIX, overview.model_dump_json(), ex=STALE_TTL)
     return overview
 
 
@@ -288,6 +305,14 @@ async def get_quakes(redis: Redis, settings: Settings) -> dict:
             return json.loads(cached)
         except Exception:
             pass
+    if is_cache_only(settings):
+        stale = await redis.get(_QUAKES_KEY + STALE_SUFFIX)
+        if stale is not None:
+            try:
+                return json.loads(stale)
+            except Exception:
+                pass
+        return {"type": "FeatureCollection", "features": []}
     try:
         async with httpx.AsyncClient(timeout=10, headers={"User-Agent": _UA}) as client:
             resp = await client.get(settings.usgs_quakes_url)
@@ -312,4 +337,6 @@ async def get_quakes(redis: Redis, settings: Settings) -> dict:
         )
     trimmed = {"type": "FeatureCollection", "features": feats}
     await redis.set(_QUAKES_KEY, json.dumps(trimmed), ex=settings.markets_cache_ttl_seconds)
+    if feats:
+        await redis.set(_QUAKES_KEY + STALE_SUFFIX, json.dumps(trimmed), ex=STALE_TTL)
     return trimmed

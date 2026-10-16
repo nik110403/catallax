@@ -1,0 +1,11 @@
+[Unit]
+Description=Catallax demo cache warm job (the only upstream caller)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Replace @STACK_DIR@ with the demo clone, e.g. via: sed "s|@STACK_DIR@|$PWD|g"
+WorkingDirectory=@STACK_DIR@
+ExecStart=@STACK_DIR@/deploy/demo/compose.sh --profile warm run --rm demo-warm
+TimeoutStartSec=10min

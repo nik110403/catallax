@@ -1,0 +1,12 @@
+[Unit]
+Description=Catallax demo cache warm: every 15 min in US market hours, hourly otherwise
+
+[Timer]
+# Times are UTC and cover both EST and EDT sessions (13:00-21:45 UTC, Mon-Fri).
+OnCalendar=Mon..Fri 13..21:00/15:00 UTC
+OnCalendar=hourly
+Persistent=false
+Unit=catallax-demo-warm.service
+
+[Install]
+WantedBy=timers.target

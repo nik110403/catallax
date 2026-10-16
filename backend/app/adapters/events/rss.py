@@ -11,6 +11,7 @@ import feedparser
 import httpx
 
 from app.adapters.events.base import PollResult, RawEvent, SourceAdapter
+from app.upstream import guard
 
 _RATE_DECISION = re.compile(
     r"interest rate|monetary policy decision|FOMC statement", re.IGNORECASE
@@ -126,6 +127,7 @@ class RssSourceAdapter(SourceAdapter):
     async def poll(
         self, cursor: dict[str, Any], etag: str | None, last_modified: str | None
     ) -> PollResult:
+        guard("events-rss")
         await self._limit()
         extra: dict[str, str] = {}
         if etag:

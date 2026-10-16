@@ -33,6 +33,7 @@ from app.adapters.envelope import Envelope
 from app.config import Settings, get_settings
 from app.errors import SidecarNotEnabled, UpstreamError
 from app.redis import get_redis
+from app.upstream import guard, is_cache_only
 
 logger = logging.getLogger("catallax.macro")
 
@@ -203,6 +204,15 @@ class MacroAdapter:
                 return model.model_validate_json(raw), True, False
             except Exception as exc:
                 logger.debug("macro cache deserialise failed (%s): %s", cache_key, exc)
+        if is_cache_only(self.settings):
+            # Demo: no upstream on a miss — serve the last good result or fail.
+            stale = await self.redis.get(f"{cache_key}:stale")
+            if stale is not None:
+                try:
+                    return model.model_validate_json(stale), False, True
+                except Exception as exc:
+                    logger.debug("macro stale deserialise failed (%s): %s", cache_key, exc)
+            guard("macro", self.settings)
         data = await builder()
         if not is_empty(data):
             try:
@@ -222,6 +232,7 @@ class MacroAdapter:
         return data, False, False
 
     def _client(self) -> httpx.AsyncClient:
+        guard("macro", self.settings)
         return httpx.AsyncClient(timeout=self.settings.openbb_http_timeout)
 
     # ── public API (each returns Envelope[Model]) ──────────────

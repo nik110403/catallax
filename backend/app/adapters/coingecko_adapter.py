@@ -13,6 +13,7 @@ import httpx
 
 from app.adapters.base import Candle, PriceSourceAdapter, Quote, SymbolMatch
 from app.errors import SymbolNotFound, UpstreamError
+from app.upstream import guard
 
 _IDMAP_PREFIX = "coingecko:id:"  # per-symbol key, own TTL
 _IDMAP_TTL = 86_400  # 24h
@@ -31,6 +32,7 @@ class CoinGeckoAdapter(PriceSourceAdapter):
         return self._settings.coingecko_base_url.rstrip("/")
 
     async def _get(self, path: str, params: dict | None = None) -> object:
+        guard("coingecko", self._settings)
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(f"{self._base}{path}", params=params)

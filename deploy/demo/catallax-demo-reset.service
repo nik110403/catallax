@@ -1,0 +1,11 @@
+[Unit]
+Description=Catallax demo nightly reset (wipe postgres+redis, reseed, rewarm)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Replace @STACK_DIR@ with the demo clone, e.g. via: sed "s|@STACK_DIR@|$PWD|g"
+WorkingDirectory=@STACK_DIR@
+ExecStart=@STACK_DIR@/deploy/demo/reset-demo.sh
+TimeoutStartSec=20min

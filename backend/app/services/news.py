@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from app.config import Settings
+from app.upstream import STALE_SUFFIX, STALE_TTL, is_cache_only
 
 _CACHE_KEY = "news:aggregate"
 _UA = "Mozilla/5.0 (catallax news aggregator)"
@@ -88,6 +89,15 @@ async def get_news(redis: Redis, settings: Settings) -> list[NewsItem]:
         except Exception:
             pass
 
+    if is_cache_only(settings):
+        stale = await redis.get(_CACHE_KEY + STALE_SUFFIX)
+        if stale is not None:
+            try:
+                return [NewsItem.model_validate(i) for i in json.loads(stale)]
+            except Exception:
+                pass
+        return []
+
     items = await _fetch_all(settings.news_feed_urls)
     # Newest first; undated items sink to the bottom.
     items.sort(
@@ -98,4 +108,6 @@ async def get_news(redis: Redis, settings: Settings) -> list[NewsItem]:
 
     payload = json.dumps([i.model_dump(mode="json") for i in items])
     await redis.set(_CACHE_KEY, payload, ex=settings.news_cache_ttl_seconds)
+    if items:
+        await redis.set(_CACHE_KEY + STALE_SUFFIX, payload, ex=STALE_TTL)
     return items

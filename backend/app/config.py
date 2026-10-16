@@ -1,5 +1,6 @@
 from datetime import date
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings
@@ -749,6 +750,15 @@ class Settings(BaseSettings):
     # DEMO_MODE swaps every money-bearing endpoint to synthetic fixtures so the app
     # can be shared without exposing live portfolio/ledger data.
     demo_mode: bool = False
+    # Hosted public demo (deploy/demo/, DEMO-SPEC C7b). DEMO_READONLY=true makes
+    # DemoReadOnlyMiddleware refuse every non-GET/HEAD/OPTIONS /api/v1/* request.
+    demo_readonly: bool = False
+    # "cache-only": a cache miss never triggers an outbound fetch (stale or empty
+    # data is served instead); see app/upstream.py. `python -m app.demo_warm`
+    # overrides this to "live" and is the only upstream caller on the demo.
+    upstream_mode: Literal["live", "cache-only"] = "live"
+    # Warm-job symbol list (comma-separated). Empty = the demo persona's holdings.
+    demo_warm_symbols: str = ""
     owner_name: str = ""  # greeting + privacy-scan token; empty disables both; blanked in demo mode
     # Empty passphrase = gate disabled (single-user localhost default). SecretStr so
     # an accidental `Settings` repr/dump never prints it — every read site calls

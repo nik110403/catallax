@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from app.adapters.events.base import PollResult, RawEvent, SourceAdapter, Universe
+from app.upstream import guard
 
 logger = logging.getLogger(__name__)
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -345,6 +346,7 @@ class EdgarSourceAdapter(SourceAdapter):
     async def poll(
         self, cursor: dict[str, Any], etag: str | None, last_modified: str | None
     ) -> PollResult:
+        guard("events-edgar")
         start = time.monotonic()
         deadline = start + max(self._settings.events_adapter_timeout_seconds - 10, 0)
         out_cursor = dict(cursor or {})

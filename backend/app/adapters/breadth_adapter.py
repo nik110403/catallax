@@ -25,6 +25,7 @@ from redis.asyncio import Redis
 
 from app.config import Settings, get_settings
 from app.redis import get_redis
+from app.upstream import guard
 
 logger = logging.getLogger("catallax.breadth")
 
@@ -114,6 +115,7 @@ class BreadthAdapter:
         return {}, True
 
     async def _build(self) -> dict[str, Any]:
+        guard("breadth", self.settings)
         async with httpx.AsyncClient(
             timeout=self.settings.openbb_http_timeout,
             headers={"User-Agent": _UA},
