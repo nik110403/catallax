@@ -34,6 +34,7 @@ def _render() -> dict:
     })
     return {
         "name": "catallax-demo",
+        "networks": {"default": {"ipam": {"config": [{"subnet": "10.200.0.0/24"}]}}},
         "services": {
             "nginx": _svc(
                 cap_add=["CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"],
@@ -42,6 +43,7 @@ def _render() -> dict:
                           "target": "/etc/nginx/templates", "read_only": True}],
                 environment={"DEMO_BIND_ADDR": LAN, "DEMO_TRUSTED_PROXY": PROXY,
                              "NGINX_ENVSUBST_OUTPUT_DIR": "/etc/nginx/demo-env"},
+                tmpfs=["/var/cache/nginx", "/etc/nginx/demo-env:mode=0755,noexec,nosuid"],
             ),
             "fastapi-backend": backend,
             "redis": _svc(cap_add=["CHOWN", "SETGID", "SETUID"]),
@@ -49,14 +51,14 @@ def _render() -> dict:
     }
 
 
-def _run_preflight(tmp_path: Path, render: dict) -> subprocess.CompletedProcess:
+def _run_preflight(tmp_path: Path, render: dict, script: Path = DEMO / "preflight-demo.sh") -> subprocess.CompletedProcess:
     markers = tmp_path / "markers.txt"
     markers.write_text(r"198\.51\.100\." + "\n")
     rf = tmp_path / "render.json"
     rf.write_text(json.dumps(render))
     env = {**os.environ, "PREFLIGHT_DEMO_RENDER": str(rf), "DEMO_DENY_MARKERS_FILE": str(markers),
            "DEMO_BIND_ADDR": LAN}
-    return subprocess.run([str(DEMO / "preflight-demo.sh")], env=env, capture_output=True, text=True)
+    return subprocess.run([str(script)], env=env, capture_output=True, text=True)
 
 
 def test_preflight_ignores_bind_addr_and_proxy_keys_from_env_file(tmp_path: Path) -> None:
@@ -92,6 +94,80 @@ def test_preflight_requires_template_mount_and_output_dir(tmp_path: Path) -> Non
     del render["services"]["nginx"]["environment"]["NGINX_ENVSUBST_OUTPUT_DIR"]
     r = _run_preflight(tmp_path, render)
     assert r.returncode != 0 and "NGINX_ENVSUBST_OUTPUT_DIR" in r.stderr
+
+
+def _copy_stack(tmp_path: Path) -> tuple[Path, Path]:
+    """A throwaway stack (script + templates) so the template dir can be tampered with."""
+    d = tmp_path / "stack" / "deploy" / "demo"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "preflight-demo.sh").write_bytes((DEMO / "preflight-demo.sh").read_bytes())
+    (d / "preflight-demo.sh").chmod(0o755)
+    (d / "nginx-templates").mkdir(exist_ok=True)
+    (d / "nginx-templates" / "demo-trusted-proxy.conf.template").write_bytes(
+        (DEMO / "nginx-templates" / "demo-trusted-proxy.conf.template").read_bytes())
+    return d, d / "preflight-demo.sh"
+
+
+def _tampered(tmp_path: Path, mutate) -> subprocess.CompletedProcess:
+    d, script = _copy_stack(tmp_path)
+    mutate(d / "nginx-templates")
+    render = _render()
+    render["services"]["nginx"]["volumes"][0]["source"] = str(d / "nginx-templates")
+    return _run_preflight(tmp_path, render, script)
+
+
+def test_preflight_passes_on_a_copied_stack(tmp_path: Path) -> None:
+    r = _tampered(tmp_path, lambda t: None)
+    assert r.returncode == 0, r.stderr
+
+
+def test_preflight_template_content_must_be_exactly_the_trust_line(tmp_path: Path) -> None:
+    r = _tampered(tmp_path, lambda t: (t / "demo-trusted-proxy.conf.template").write_text("0.0.0.0/0 1;\n"))
+    assert r.returncode != 0 and "demo-trusted-proxy.conf.template" in r.stderr
+    (tmp_path / "stack").rename(tmp_path / "stack1")
+    r = _tampered(tmp_path, lambda t: (t / "demo-trusted-proxy.conf.template").write_text(
+        "# c\n\n${DEMO_TRUSTED_PROXY} 1;\n0.0.0.0/0 1;\n"))
+    assert r.returncode != 0 and "demo-trusted-proxy.conf.template" in r.stderr
+
+
+def test_preflight_template_dir_must_hold_one_file(tmp_path: Path) -> None:
+    r = _tampered(tmp_path, lambda t: (t / "extra.template").write_text("x\n"))
+    assert r.returncode != 0 and "exactly demo-trusted-proxy.conf.template" in r.stderr
+
+
+def test_preflight_template_mount_source_and_mode(tmp_path: Path) -> None:
+    render = _render()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    render["services"]["nginx"]["volumes"][0]["source"] = str(elsewhere)
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and "template mount source" in r.stderr
+    render = _render()
+    render["services"]["nginx"]["volumes"][0]["read_only"] = False
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and "read_only" in r.stderr
+
+
+def test_preflight_requires_demo_env_tmpfs(tmp_path: Path) -> None:
+    render = _render()
+    render["services"]["nginx"]["tmpfs"] = ["/var/cache/nginx"]
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and "demo-env" in r.stderr
+
+
+@pytest.mark.parametrize("config,msg", [
+    ([{"subnet": "198.51.100.0/24"}], "overlaps"),
+    ([{"subnet": "10.0.0.0/8"}], "/16 to /28"),
+    ([{"subnet": "10.200.0.0/30"}], "/16 to /28"),
+    ([{"subnet": "fd00::/64"}], "/16 to /28"),
+    ([{"subnet": "10.200.0.0/24"}, {"subnet": "10.201.0.0/24"}], "exactly one"),
+    ([], "exactly one"),
+])
+def test_preflight_network_subnet_rules(tmp_path: Path, config: list, msg: str) -> None:
+    render = _render()
+    render["networks"]["default"]["ipam"]["config"] = config
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and msg in r.stderr
 
 
 @pytest.mark.parametrize("opts", [

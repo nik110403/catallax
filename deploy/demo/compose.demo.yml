@@ -48,7 +48,7 @@ services:
       DEMO_TRUSTED_PROXY: "${DEMO_TRUSTED_PROXY:-127.0.0.1/32}"
       # read_only rootfs: render into a tmpfs, not /etc/nginx/conf.d.
       NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/demo-env
-    tmpfs: [/var/cache/nginx, /var/run, /tmp, /etc/nginx/demo-env]
+    tmpfs: [/var/cache/nginx, /var/run, /tmp, "/etc/nginx/demo-env:mode=0755,noexec,nosuid"]
 
   react-frontend:
     <<: *hardened

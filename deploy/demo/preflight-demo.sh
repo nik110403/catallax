@@ -187,9 +187,51 @@ else:
         bad.append("nginx: DEMO_TRUSTED_PROXY is not a single IPv4 CIDR no broader than /8")
 if nenv.get("NGINX_ENVSUBST_OUTPUT_DIR") != "/etc/nginx/demo-env":
     bad.append("nginx: NGINX_ENVSUBST_OUTPUT_DIR must be /etc/nginx/demo-env")
-if not any(isinstance(v, dict) and v.get("target") == "/etc/nginx/templates" and v.get("type") == "bind"
-           for v in ngx.get("volumes") or []):
-    bad.append("nginx: the envsubst template bind mount at /etc/nginx/templates is missing")
+# Effective trust set: the template that nginx renders must be the repo file, mounted
+# read-only from this stack, and that directory must hold nothing else.
+tmpl = [v for v in ngx.get("volumes") or [] if isinstance(v, dict) and v.get("target") == "/etc/nginx/templates"]
+if len(tmpl) != 1:
+    bad.append("nginx: exactly one envsubst template mount at /etc/nginx/templates is required")
+else:
+    tv = tmpl[0]
+    want_dir = os.path.join(stack, "deploy", "demo", "nginx-templates")
+    if tv.get("type") != "bind":
+        bad.append("nginx: the template mount at /etc/nginx/templates must be a bind mount")
+    if tv.get("read_only") is not True:
+        bad.append("nginx: the template mount at /etc/nginx/templates must be read_only: true")
+    if os.path.realpath(str(tv.get("source", ""))) != os.path.realpath(want_dir):
+        bad.append("nginx: the template mount source must be %s" % want_dir)
+    else:
+        names = sorted(os.listdir(want_dir))
+        if names != ["demo-trusted-proxy.conf.template"]:
+            bad.append("nginx: template dir must hold exactly demo-trusted-proxy.conf.template, found %r" % names)
+        else:
+            with open(os.path.join(want_dir, names[0])) as fh:
+                body = [l.strip() for l in fh if l.strip() and not l.strip().startswith("#")]
+            if body != ["${DEMO_TRUSTED_PROXY} 1;"]:
+                bad.append("nginx: demo-trusted-proxy.conf.template must contain only the line ${DEMO_TRUSTED_PROXY} 1;")
+if not any(str(t).split(":", 1)[0] == "/etc/nginx/demo-env" for t in ngx.get("tmpfs") or []):
+    bad.append("nginx: tmpfs at /etc/nginx/demo-env is missing")
+
+# Stack network: one explicit IPv4 subnet, /16 to /28, disjoint from the trusted proxy.
+import ipaddress
+ipam = ((cfg.get("networks") or {}).get("default") or {}).get("ipam") or {}
+subs = [c.get("subnet") for c in ipam.get("config") or [] if isinstance(c, dict)]
+if len(subs) != 1 or len(ipam.get("config") or []) != 1:
+    bad.append("networks.default.ipam.config must hold exactly one subnet, got %r" % (subs,))
+else:
+    try:
+        net = ipaddress.ip_network(str(subs[0]), strict=True)
+        if net.version != 4 or not 16 <= net.prefixlen <= 28:
+            bad.append("networks.default subnet must be IPv4 with a /16 to /28 prefix")
+        else:
+            try:
+                if net.overlaps(ipaddress.ip_network(tp, strict=False)):
+                    bad.append("networks.default subnet overlaps nginx DEMO_TRUSTED_PROXY")
+            except ValueError:
+                pass  # malformed DEMO_TRUSTED_PROXY is reported above
+    except ValueError:
+        bad.append("networks.default subnet %r is not a valid CIDR" % (subs[0],))
 blob = json.dumps(scan)
 markers = []
 with open(os.environ["DEMO_DENY_MARKERS_FILE"]) as fh:
