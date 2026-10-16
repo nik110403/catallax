@@ -1,0 +1,801 @@
+;; Catallax sample ledger — dummy data for local development.
+;; 18 months: 2025-01 through 2026-06. EUR/USD, stocks, crypto.
+;; Swap to a real ledger via BEANCOUNT_FILE in .env.
+
+option "title" "Catallax Sample Ledger"
+option "operating_currency" "EUR"
+option "operating_currency" "USD"
+
+;; ─── Commodities ────────────────────────────────────────────
+2020-01-01 commodity EUR
+2020-01-01 commodity USD
+2020-01-01 commodity AAPL
+2020-01-01 commodity MSFT
+2020-01-01 commodity VWCE
+2020-01-01 commodity BTC
+2020-01-01 commodity ETH
+2020-01-01 commodity SOL
+
+;; ─── Accounts ───────────────────────────────────────────────
+2020-01-01 open Equity:Opening-Balances
+2020-01-01 open Assets:EU:Bank:Checking          EUR
+2020-01-01 open Assets:EU:Bank:Savings           EUR
+2020-01-01 open Assets:US:Broker:Cash            USD
+2020-01-01 open Assets:US:Broker:Positions
+2020-01-01 open Assets:Crypto
+2020-01-01 open Income:Salary                    EUR
+2020-01-01 open Income:Dividends                 USD
+2020-01-01 open Income:CapitalGains              USD
+2020-01-01 open Expenses:Rent                    EUR
+2020-01-01 open Expenses:Groceries               EUR
+2020-01-01 open Expenses:Utilities               EUR
+2020-01-01 open Expenses:Dining                  EUR
+2020-01-01 open Expenses:Transport               EUR
+2020-01-01 open Expenses:Subscriptions           EUR
+
+;; ─── Opening balances (2025-01-01) ──────────────────────────
+2025-01-01 * "Opening balances"
+  Assets:EU:Bank:Checking            8463.20 EUR
+  Assets:EU:Bank:Savings            23871.55 EUR
+  Assets:US:Broker:Cash              5000.00 USD
+  Assets:US:Broker:Positions              10 AAPL {180.00 USD, 2024-06-14}
+  Assets:US:Broker:Positions               8 MSFT {370.00 USD, 2024-06-14}
+  Assets:US:Broker:Positions              30 VWCE {105.00 EUR, 2024-09-02}
+  Assets:Crypto                         0.15 BTC {42000.00 USD, 2024-03-11}
+  Assets:Crypto                         1.20 ETH {2300.00 USD, 2024-03-11}
+  Equity:Opening-Balances
+
+;; ════════ 2025-01 ════════
+2025-01-01 * "Acme Data Ltd" "Salary January"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-01-02 * "City Property Management" "Rent January"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-01-03 * "City Transit" "Annual transit pass"
+  Expenses:Transport                  287.50 EUR
+  Assets:EU:Bank:Checking
+
+2025-01-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-01-15 * "Supermarket / Grocery Store" "Groceries January"
+  Expenses:Groceries                  412.35 EUR
+  Assets:EU:Bank:Checking
+
+2025-01-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  178.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-01-25 * "Various restaurants" "Dining January"
+  Expenses:Dining                     205.80 EUR
+  Assets:EU:Bank:Checking
+
+2025-01-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-01-31 price AAPL   235.00 USD
+2025-01-31 price MSFT   415.00 USD
+2025-01-31 price VWCE   122.50 EUR
+2025-01-31 price BTC  102000.00 USD
+2025-01-31 price ETH    3250.00 USD
+2025-01-31 price SOL     235.00 USD
+2025-01-31 price USD       0.96 EUR
+
+;; ════════ 2025-02 ════════
+2025-02-01 * "Acme Data Ltd" "Salary February"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-02-02 * "City Property Management" "Rent February"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-02-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-02-10 * "Broker funding" "EUR to USD transfer"
+  Assets:EU:Bank:Checking           -1000.00 EUR
+  Assets:US:Broker:Cash              1040.00 USD @@ 1000.00 EUR
+
+2025-02-12 * "Broker" "Buy AAPL"
+  Assets:US:Broker:Positions               4 AAPL {238.50 USD}
+  Assets:US:Broker:Cash
+
+2025-02-13 * "Broker" "AAPL dividend"
+  Assets:US:Broker:Cash                 3.50 USD
+  Income:Dividends
+
+2025-02-15 * "Supermarket / Grocery Store" "Groceries February"
+  Expenses:Groceries                  398.20 EUR
+  Assets:EU:Bank:Checking
+
+2025-02-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  182.10 EUR
+  Assets:EU:Bank:Checking
+
+2025-02-25 * "Various restaurants" "Dining February"
+  Expenses:Dining                     188.45 EUR
+  Assets:EU:Bank:Checking
+
+2025-02-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-02-28 price AAPL   241.00 USD
+2025-02-28 price MSFT   408.00 USD
+2025-02-28 price VWCE   124.10 EUR
+2025-02-28 price BTC   96500.00 USD
+2025-02-28 price ETH    2980.00 USD
+2025-02-28 price SOL     198.00 USD
+2025-02-28 price USD       0.95 EUR
+
+;; ════════ 2025-03 ════════
+2025-03-01 * "Acme Data Ltd" "Salary March"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-03-02 * "City Property Management" "Rent March"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-03-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-03-11 * "Exchange" "Buy BTC"
+  Assets:Crypto                         0.05 BTC {82000.00 USD}
+  Assets:US:Broker:Cash
+
+2025-03-15 * "Supermarket / Grocery Store" "Groceries March"
+  Expenses:Groceries                  425.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-03-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  165.30 EUR
+  Assets:EU:Bank:Checking
+
+2025-03-25 * "Various restaurants" "Dining March"
+  Expenses:Dining                     232.10 EUR
+  Assets:EU:Bank:Checking
+
+2025-03-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-03-31 price AAPL   222.00 USD
+2025-03-31 price MSFT   391.00 USD
+2025-03-31 price VWCE   118.30 EUR
+2025-03-31 price BTC   83500.00 USD
+2025-03-31 price ETH    2010.00 USD
+2025-03-31 price SOL     142.00 USD
+2025-03-31 price USD       0.93 EUR
+
+;; ════════ 2025-04 ════════
+2025-04-01 * "Acme Data Ltd" "Salary April"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-04-02 * "City Property Management" "Rent April"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-04-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-04-14 * "Broker" "Buy VWCE"
+  Assets:US:Broker:Positions               8 VWCE {116.80 EUR}
+  Assets:EU:Bank:Checking
+
+2025-04-15 * "Supermarket / Grocery Store" "Groceries April"
+  Expenses:Groceries                  404.90 EUR
+  Assets:EU:Bank:Checking
+
+2025-04-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  142.75 EUR
+  Assets:EU:Bank:Checking
+
+2025-04-25 * "Various restaurants" "Dining April"
+  Expenses:Dining                     176.30 EUR
+  Assets:EU:Bank:Checking
+
+2025-04-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-04-30 price AAPL   212.00 USD
+2025-04-30 price MSFT   395.00 USD
+2025-04-30 price VWCE   119.90 EUR
+2025-04-30 price BTC   94000.00 USD
+2025-04-30 price ETH    1790.00 USD
+2025-04-30 price SOL     148.00 USD
+2025-04-30 price USD       0.88 EUR
+
+;; ════════ 2025-05 ════════
+2025-05-01 * "Acme Data Ltd" "Salary May"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-05-02 * "City Property Management" "Rent May"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-05-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-05-12 * "Broker" "Buy MSFT"
+  Assets:US:Broker:Positions               2 MSFT {430.00 USD}
+  Assets:US:Broker:Cash
+
+2025-05-14 * "Broker" "AAPL dividend"
+  Assets:US:Broker:Cash                 3.64 USD
+  Income:Dividends
+
+2025-05-15 * "Supermarket / Grocery Store" "Groceries May"
+  Expenses:Groceries                  417.85 EUR
+  Assets:EU:Bank:Checking
+
+2025-05-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  128.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-05-25 * "Various restaurants" "Dining May"
+  Expenses:Dining                     243.70 EUR
+  Assets:EU:Bank:Checking
+
+2025-05-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-05-31 price AAPL   200.50 USD
+2025-05-31 price MSFT   460.00 USD
+2025-05-31 price VWCE   123.40 EUR
+2025-05-31 price BTC  104500.00 USD
+2025-05-31 price ETH    2530.00 USD
+2025-05-31 price SOL     165.00 USD
+2025-05-31 price USD       0.88 EUR
+
+;; ════════ 2025-06 ════════
+2025-06-01 * "Acme Data Ltd" "Salary June"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-06-02 * "City Property Management" "Rent June"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-06-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-06-10 * "Broker funding" "EUR to USD transfer"
+  Assets:EU:Bank:Checking           -1000.00 EUR
+  Assets:US:Broker:Cash              1130.00 USD @@ 1000.00 EUR
+
+2025-06-16 * "Exchange" "Buy ETH"
+  Assets:Crypto                         0.80 ETH {2480.00 USD}
+  Assets:US:Broker:Cash
+
+2025-06-15 * "Supermarket / Grocery Store" "Groceries June"
+  Expenses:Groceries                  391.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-06-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  112.95 EUR
+  Assets:EU:Bank:Checking
+
+2025-06-25 * "Various restaurants" "Dining June"
+  Expenses:Dining                     258.20 EUR
+  Assets:EU:Bank:Checking
+
+2025-06-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-06-30 price AAPL   205.00 USD
+2025-06-30 price MSFT   492.00 USD
+2025-06-30 price VWCE   125.70 EUR
+2025-06-30 price BTC  107000.00 USD
+2025-06-30 price ETH    2470.00 USD
+2025-06-30 price SOL     152.00 USD
+2025-06-30 price USD       0.85 EUR
+
+;; ════════ 2025-07 ════════
+2025-07-01 * "Acme Data Ltd" "Salary July"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-07-02 * "City Property Management" "Rent July"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-07-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-07-15 * "Supermarket / Grocery Store" "Groceries July"
+  Expenses:Groceries                  433.15 EUR
+  Assets:EU:Bank:Checking
+
+2025-07-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  105.20 EUR
+  Assets:EU:Bank:Checking
+
+2025-07-25 * "Various restaurants" "Dining July"
+  Expenses:Dining                     297.65 EUR
+  Assets:EU:Bank:Checking
+
+2025-07-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-07-31 price AAPL   214.00 USD
+2025-07-31 price MSFT   512.00 USD
+2025-07-31 price VWCE   128.20 EUR
+2025-07-31 price BTC  116000.00 USD
+2025-07-31 price ETH    3700.00 USD
+2025-07-31 price SOL     178.00 USD
+2025-07-31 price USD       0.87 EUR
+
+;; ════════ 2025-08 ════════
+2025-08-01 * "Acme Data Ltd" "Salary August"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-08-02 * "City Property Management" "Rent August"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-08-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-08-11 * "Broker" "Buy AAPL"
+  Assets:US:Broker:Positions               3 AAPL {225.00 USD}
+  Assets:US:Broker:Cash
+
+2025-08-14 * "Broker" "AAPL + MSFT dividends"
+  Assets:US:Broker:Cash                12.14 USD
+  Income:Dividends
+
+2025-08-15 * "Supermarket / Grocery Store" "Groceries August"
+  Expenses:Groceries                  387.50 EUR
+  Assets:EU:Bank:Checking
+
+2025-08-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  108.45 EUR
+  Assets:EU:Bank:Checking
+
+2025-08-25 * "Various restaurants" "Dining August"
+  Expenses:Dining                     312.90 EUR
+  Assets:EU:Bank:Checking
+
+2025-08-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-08-31 price AAPL   232.00 USD
+2025-08-31 price MSFT   508.00 USD
+2025-08-31 price VWCE   129.60 EUR
+2025-08-31 price BTC  108500.00 USD
+2025-08-31 price ETH    4350.00 USD
+2025-08-31 price SOL     205.00 USD
+2025-08-31 price USD       0.86 EUR
+
+;; ════════ 2025-09 ════════
+2025-09-01 * "Acme Data Ltd" "Salary September"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-09-02 * "City Property Management" "Rent September"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-09-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-09-08 * "Exchange" "Buy SOL"
+  Assets:Crypto                        10.00 SOL {212.00 USD}
+  Assets:US:Broker:Cash
+
+2025-09-15 * "Supermarket / Grocery Store" "Groceries September"
+  Expenses:Groceries                  409.75 EUR
+  Assets:EU:Bank:Checking
+
+2025-09-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  121.80 EUR
+  Assets:EU:Bank:Checking
+
+2025-09-25 * "Various restaurants" "Dining September"
+  Expenses:Dining                     201.55 EUR
+  Assets:EU:Bank:Checking
+
+2025-09-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-09-30 price AAPL   254.00 USD
+2025-09-30 price MSFT   517.00 USD
+2025-09-30 price VWCE   131.90 EUR
+2025-09-30 price BTC  114000.00 USD
+2025-09-30 price ETH    4150.00 USD
+2025-09-30 price SOL     208.00 USD
+2025-09-30 price USD       0.85 EUR
+
+;; ════════ 2025-10 ════════
+2025-10-01 * "Acme Data Ltd" "Salary October"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-10-02 * "City Property Management" "Rent October"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-10-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-10-13 * "Broker" "Buy VWCE"
+  Assets:US:Broker:Positions               7 VWCE {133.10 EUR}
+  Assets:EU:Bank:Checking
+
+2025-10-15 * "Supermarket / Grocery Store" "Groceries October"
+  Expenses:Groceries                  421.30 EUR
+  Assets:EU:Bank:Checking
+
+2025-10-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  146.25 EUR
+  Assets:EU:Bank:Checking
+
+2025-10-25 * "Various restaurants" "Dining October"
+  Expenses:Dining                     224.85 EUR
+  Assets:EU:Bank:Checking
+
+2025-10-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-10-31 price AAPL   262.00 USD
+2025-10-31 price MSFT   525.00 USD
+2025-10-31 price VWCE   134.20 EUR
+2025-10-31 price BTC  110500.00 USD
+2025-10-31 price ETH    3846.10 USD
+2025-10-31 price SOL     185.00 USD
+2025-10-31 price USD       0.86 EUR
+
+;; ════════ 2025-11 ════════
+2025-11-01 * "Acme Data Ltd" "Salary November"
+  Assets:EU:Bank:Checking            4187.35 EUR
+  Income:Salary
+
+2025-11-02 * "City Property Management" "Rent November"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-11-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-11-10 * "Broker funding" "EUR to USD transfer"
+  Assets:EU:Bank:Checking           -1000.00 EUR
+  Assets:US:Broker:Cash              1155.00 USD @@ 1000.00 EUR
+
+2025-11-12 * "Broker" "Buy MSFT"
+  Assets:US:Broker:Positions               2 MSFT {510.00 USD}
+  Assets:US:Broker:Cash
+
+2025-11-14 * "Broker" "AAPL + MSFT dividends"
+  Assets:US:Broker:Cash                12.68 USD
+  Income:Dividends
+
+2025-11-15 * "Supermarket / Grocery Store" "Groceries November"
+  Expenses:Groceries                  396.10 EUR
+  Assets:EU:Bank:Checking
+
+2025-11-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  168.90 EUR
+  Assets:EU:Bank:Checking
+
+2025-11-25 * "Various restaurants" "Dining November"
+  Expenses:Dining                     192.40 EUR
+  Assets:EU:Bank:Checking
+
+2025-11-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-11-30 price AAPL   271.00 USD
+2025-11-30 price MSFT   492.00 USD
+2025-11-30 price VWCE   132.80 EUR
+2025-11-30 price BTC   91000.00 USD
+2025-11-30 price ETH    3020.00 USD
+2025-11-30 price SOL     142.00 USD
+2025-11-30 price USD       0.86 EUR
+
+;; ════════ 2025-12 ════════
+2025-12-01 * "Acme Data Ltd" "Salary December + bonus"
+  Assets:EU:Bank:Checking            6274.90 EUR
+  Income:Salary
+
+2025-12-02 * "City Property Management" "Rent December"
+  Expenses:Rent                      1342.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-12-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings             1500.00 EUR
+  Assets:EU:Bank:Checking
+
+2025-12-15 * "Supermarket / Grocery Store" "Groceries December"
+  Expenses:Groceries                  468.95 EUR
+  Assets:EU:Bank:Checking
+
+2025-12-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  189.35 EUR
+  Assets:EU:Bank:Checking
+
+2025-12-23 * "Various restaurants" "Dining December"
+  Expenses:Dining                     341.60 EUR
+  Assets:EU:Bank:Checking
+
+2025-12-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               34.83 EUR
+  Assets:EU:Bank:Checking
+
+2025-12-31 price AAPL   268.00 USD
+2025-12-31 price MSFT   478.00 USD
+2025-12-31 price VWCE   133.50 EUR
+2025-12-31 price BTC   95500.00 USD
+2025-12-31 price ETH    3318.65 USD
+2025-12-31 price SOL     158.00 USD
+2025-12-31 price USD       0.87 EUR
+
+;; ════════ 2026-01 ════════
+2026-01-01 * "Acme Data Ltd" "Salary January"
+  Assets:EU:Bank:Checking            4362.80 EUR
+  Income:Salary
+
+2026-01-02 * "City Property Management" "Rent January"
+  Expenses:Rent                      1388.15 EUR
+  Assets:EU:Bank:Checking
+
+2026-01-03 * "City Transit" "Annual transit pass"
+  Expenses:Transport                  287.50 EUR
+  Assets:EU:Bank:Checking
+
+2026-01-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2026-01-09 * "Exchange" "Sell BTC (partial)"
+  Assets:Crypto                        -0.05 BTC {42000.00 USD} @ 98000.00 USD
+  Assets:US:Broker:Cash              4900.00 USD
+  Income:CapitalGains               -2800.00 USD
+
+2026-01-15 * "Supermarket / Grocery Store" "Groceries January"
+  Expenses:Groceries                  428.70 EUR
+  Assets:EU:Bank:Checking
+
+2026-01-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  184.55 EUR
+  Assets:EU:Bank:Checking
+
+2026-01-25 * "Various restaurants" "Dining January"
+  Expenses:Dining                     217.25 EUR
+  Assets:EU:Bank:Checking
+
+2026-01-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               37.21 EUR
+  Assets:EU:Bank:Checking
+
+2026-01-31 price AAPL   259.00 USD
+2026-01-31 price MSFT   484.00 USD
+2026-01-31 price VWCE   135.10 EUR
+2026-01-31 price BTC   99500.00 USD
+2026-01-31 price ETH    3410.00 USD
+2026-01-31 price SOL     171.00 USD
+2026-01-31 price USD       0.88 EUR
+
+;; ════════ 2026-02 ════════
+2026-02-01 * "Acme Data Ltd" "Salary February"
+  Assets:EU:Bank:Checking            4362.80 EUR
+  Income:Salary
+
+2026-02-02 * "City Property Management" "Rent February"
+  Expenses:Rent                      1388.15 EUR
+  Assets:EU:Bank:Checking
+
+2026-02-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2026-02-11 * "Broker" "Buy AAPL"
+  Assets:US:Broker:Positions               4 AAPL {255.00 USD}
+  Assets:US:Broker:Cash
+
+2026-02-13 * "Broker" "AAPL + MSFT dividends"
+  Assets:US:Broker:Cash                13.55 USD
+  Income:Dividends
+
+2026-02-15 * "Supermarket / Grocery Store" "Groceries February"
+  Expenses:Groceries                  402.85 EUR
+  Assets:EU:Bank:Checking
+
+2026-02-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  176.20 EUR
+  Assets:EU:Bank:Checking
+
+2026-02-25 * "Various restaurants" "Dining February"
+  Expenses:Dining                     195.95 EUR
+  Assets:EU:Bank:Checking
+
+2026-02-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               37.21 EUR
+  Assets:EU:Bank:Checking
+
+2026-02-28 price AAPL   251.00 USD
+2026-02-28 price MSFT   496.00 USD
+2026-02-28 price VWCE   136.40 EUR
+2026-02-28 price BTC  103500.00 USD
+2026-02-28 price ETH    3580.00 USD
+2026-02-28 price SOL     182.00 USD
+2026-02-28 price USD       0.89 EUR
+
+;; ════════ 2026-03 ════════
+2026-03-01 * "Acme Data Ltd" "Salary March"
+  Assets:EU:Bank:Checking            4362.80 EUR
+  Income:Salary
+
+2026-03-02 * "City Property Management" "Rent March"
+  Expenses:Rent                      1388.15 EUR
+  Assets:EU:Bank:Checking
+
+2026-03-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2026-03-15 * "Supermarket / Grocery Store" "Groceries March"
+  Expenses:Groceries                  415.40 EUR
+  Assets:EU:Bank:Checking
+
+2026-03-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  158.75 EUR
+  Assets:EU:Bank:Checking
+
+2026-03-25 * "Various restaurants" "Dining March"
+  Expenses:Dining                     228.60 EUR
+  Assets:EU:Bank:Checking
+
+2026-03-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               37.21 EUR
+  Assets:EU:Bank:Checking
+
+2026-03-31 price AAPL   247.00 USD
+2026-03-31 price MSFT   505.00 USD
+2026-03-31 price VWCE   137.90 EUR
+2026-03-31 price BTC  108000.00 USD
+2026-03-31 price ETH    3720.00 USD
+2026-03-31 price SOL     194.00 USD
+2026-03-31 price USD       0.90 EUR
+
+;; ════════ 2026-04 ════════
+2026-04-01 * "Acme Data Ltd" "Salary April"
+  Assets:EU:Bank:Checking            4362.80 EUR
+  Income:Salary
+
+2026-04-02 * "City Property Management" "Rent April"
+  Expenses:Rent                      1388.15 EUR
+  Assets:EU:Bank:Checking
+
+2026-04-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2026-04-13 * "Broker" "Buy VWCE"
+  Assets:US:Broker:Positions               6 VWCE {138.20 EUR}
+  Assets:EU:Bank:Checking
+
+2026-04-15 * "Supermarket / Grocery Store" "Groceries April"
+  Expenses:Groceries                  398.65 EUR
+  Assets:EU:Bank:Checking
+
+2026-04-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  136.50 EUR
+  Assets:EU:Bank:Checking
+
+2026-04-25 * "Various restaurants" "Dining April"
+  Expenses:Dining                     243.15 EUR
+  Assets:EU:Bank:Checking
+
+2026-04-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               37.21 EUR
+  Assets:EU:Bank:Checking
+
+2026-04-30 price AAPL   256.00 USD
+2026-04-30 price MSFT   512.00 USD
+2026-04-30 price VWCE   139.30 EUR
+2026-04-30 price BTC  112500.00 USD
+2026-04-30 price ETH    3890.00 USD
+2026-04-30 price SOL     201.00 USD
+2026-04-30 price USD       0.91 EUR
+
+;; ════════ 2026-05 ════════
+2026-05-01 * "Acme Data Ltd" "Salary May"
+  Assets:EU:Bank:Checking            4362.80 EUR
+  Income:Salary
+
+2026-05-02 * "City Property Management" "Rent May"
+  Expenses:Rent                      1388.15 EUR
+  Assets:EU:Bank:Checking
+
+2026-05-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2026-05-11 * "Broker" "Buy MSFT"
+  Assets:US:Broker:Positions               2 MSFT {515.00 USD}
+  Assets:US:Broker:Cash
+
+2026-05-14 * "Broker" "AAPL + MSFT dividends"
+  Assets:US:Broker:Cash                14.02 USD
+  Income:Dividends
+
+2026-05-15 * "Supermarket / Grocery Store" "Groceries May"
+  Expenses:Groceries                  409.20 EUR
+  Assets:EU:Bank:Checking
+
+2026-05-20 * "Metro Energy" "Electricity and gas"
+  Expenses:Utilities                  124.85 EUR
+  Assets:EU:Bank:Checking
+
+2026-05-25 * "Various restaurants" "Dining May"
+  Expenses:Dining                     267.40 EUR
+  Assets:EU:Bank:Checking
+
+2026-05-28 * "Netflix / Spotify / iCloud" "Subscriptions"
+  Expenses:Subscriptions               37.21 EUR
+  Assets:EU:Bank:Checking
+
+2026-05-31 price AAPL   263.00 USD
+2026-05-31 price MSFT   521.00 USD
+2026-05-31 price VWCE   140.60 EUR
+2026-05-31 price BTC  118000.00 USD
+2026-05-31 price ETH    4052.70 USD
+2026-05-31 price SOL     214.00 USD
+2026-05-31 price USD       0.91 EUR
+
+;; ════════ 2026-06 ════════
+2026-06-01 * "Acme Data Ltd" "Salary June"
+  Assets:EU:Bank:Checking            4362.80 EUR
+  Income:Salary
+
+2026-06-02 * "City Property Management" "Rent June"
+  Expenses:Rent                      1388.15 EUR
+  Assets:EU:Bank:Checking
+
+2026-06-05 * "Standing order" "Transfer to savings"
+  Assets:EU:Bank:Savings              763.40 EUR
+  Assets:EU:Bank:Checking
+
+2026-06-08 * "Supermarket / Grocery Store" "Groceries June (so far)"
+  Expenses:Groceries                  142.30 EUR
+  Assets:EU:Bank:Checking
+
+2026-06-10 * "Various restaurants" "Dining June (so far)"
+  Expenses:Dining                      84.75 EUR
+  Assets:EU:Bank:Checking
+
+2026-06-10 price AAPL   267.00 USD
+2026-06-10 price MSFT   528.00 USD
+2026-06-10 price VWCE   141.20 EUR
+2026-06-10 price BTC  121000.00 USD
+2026-06-10 price ETH    4180.00 USD
+2026-06-10 price SOL     221.00 USD
+2026-06-10 price USD       0.92 EUR

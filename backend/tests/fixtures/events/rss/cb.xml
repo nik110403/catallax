@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>ECB</title>
+    <item>
+      <title>Monetary policy decision</title>
+      <link>https://example.test/cb/rate</link>
+      <guid>cb-rate</guid>
+      <pubDate>Wed, 01 Oct 2025 10:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>President speech in Frankfurt</title>
+      <link>https://example.test/cb/speech</link>
+      <guid>cb-speech</guid>
+      <pubDate>Wed, 01 Oct 2025 09:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Weekly financial statement</title>
+      <link>https://example.test/cb/press</link>
+      <guid>cb-press</guid>
+      <pubDate>Wed, 01 Oct 2025 08:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

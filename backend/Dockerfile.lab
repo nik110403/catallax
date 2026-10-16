@@ -1,0 +1,46 @@
+# Phase 11 — Quant/ML Lab worker image (`qlib-lab`, docker compose --profile lab).
+#
+# Extends the SAME backend code (so the lab worker shares config/db/redis/history
+# /models with fastapi-backend) and adds the HEAVY ML layer (torch/xgboost/sklearn)
+# that must NOT bloat the daily backend image. Runs the off-API job loop
+# `python -m app.lab_worker` — no HTTP, no host port. Only built/started under the
+# `lab` profile, so the default stack never pays for it.
+#
+# Layer order: heavy ML deps FIRST (cache-stable across app-source edits), the
+# backend package LAST (a fast pure-python layer) — so iterating on lab code does
+# not re-download torch/xgboost.
+#
+# NOTE on the model zoo: the `deep-zoo` engine builds its LSTM/Transformer/MLP
+# models with torch DIRECTLY (not pyqlib's workflow). pyqlib is intentionally NOT
+# installed — its hard pins (older pandas/numpy) mutate the image for zero runtime
+# benefit here and make the build non-deterministic. The qlib full-workflow path is
+# deferred; `deep-zoo` already delivers a real torch deep zoo, and `sklearn-ensemble`
+# is the always-on default.
+FROM python:3.12-slim
+
+WORKDIR /srv
+
+# build-essential: some ML wheels may compile from source.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# 1) CPU-only torch from the PyTorch wheel index (avoids the multi-GB CUDA build).
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# 2) The reliable heavy ML deps (sklearn/xgboost) — the shipped model engine.
+COPY requirements-lab.txt ./
+RUN pip install --no-cache-dir -r requirements-lab.txt
+
+# 3) The backend package LAST (pandas/numpy/yfinance + all app code). Pure-python,
+#    so an app-source edit rebuilds only from here — torch/sklearn stay cached.
+COPY pyproject.toml ./
+COPY app ./app
+RUN pip install --no-cache-dir .
+
+# alembic copied for parity with the backend image (the worker does NOT migrate;
+# it waits for fastapi-backend to be healthy, which applies migrations first).
+COPY alembic.ini ./
+COPY alembic ./alembic
+
+CMD ["python", "-m", "app.lab_worker"]

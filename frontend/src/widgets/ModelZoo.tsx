@@ -1,0 +1,677 @@
+// Model Zoo (Phase 11, Quant/ML Lab). ML model train/eval runner: pick an
+// engine + model, horizon, and test fraction; POST to create an off-API job;
+// stream live progress via SSE; render metrics, feature importance bars, and
+// predicted-quantile return table inline on complete. Recent-runs list reloads.
+import { useEffect, useRef, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import { ApiError, api, labStreamUrl } from "../api/client";
+import type { Envelope, LabJob, ModelReport } from "../api/types";
+import { theme } from "../theme";
+import { deckLine } from "./help";
+import { JobStatus } from "./JobStatus";
+import { PanelHead } from "./PanelHead";
+import { Provenance } from "./Provenance";
+import { registerWidget } from "./registry";
+import { useAsync } from "./useAsync";
+
+const FALLBACK_ENGINES = ["sklearn-ensemble", "deep-zoo"];
+
+const MODEL_OPTIONS: Record<string, string[]> = {
+  "sklearn-ensemble": ["xgb", "rf", "ensemble"],
+  "deep-zoo": ["mlp", "lstm", "transformer"],
+};
+
+// Display-only label abbreviations — values sent to the API are unchanged.
+const ENGINE_LABELS: Record<string, string> = {
+  "sklearn-ensemble": "sklearn",
+  "deep-zoo": "deep-zoo",
+};
+
+function modelsFor(engine: string): string[] {
+  return MODEL_OPTIONS[engine] ?? ["xgb"];
+}
+
+const ctrl: React.CSSProperties = {
+  background: theme.bg,
+  color: theme.text,
+  border: `1px solid ${theme.border}`,
+  borderRadius: 3,
+  padding: "2px 5px",
+  fontSize: theme.fontSize.micro,
+  font: "inherit",
+};
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+        fontSize: theme.fontSize.micro,
+        color: theme.muted,
+        letterSpacing: "0.04em",
+      }}
+    >
+      {label}
+      {children}
+    </label>
+  );
+}
+
+// ── Tooltip sub-components ───────────────────────────────────────────────────
+
+function FImportTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: { feature: string; importance: number | null } }>;
+}) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
+  return (
+    <div
+      style={{
+        background: theme.panel,
+        border: `1px solid ${theme.border}`,
+        borderRadius: 3,
+        padding: "2px 6px",
+        fontSize: theme.fontSize.micro,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ color: theme.muted }}>{p.feature}</span>{" "}
+      <span className="num" style={{ color: theme.accent }}>
+        {p.importance !== null ? p.importance.toFixed(4) : "—"}
+      </span>
+    </div>
+  );
+}
+
+// ── Inline report renderer ───────────────────────────────────────────────────
+
+function ModelReportView({ env }: { env: Envelope<ModelReport> }) {
+  const d = env.data;
+  const m = d.metrics;
+
+  const metricRows: { label: string; val: string; color: string }[] = [
+    {
+      label: "RANK-IC",
+      val: m.test_ic !== null ? m.test_ic.toFixed(3) : "—",
+      color: m.test_ic !== null && m.test_ic > 0 ? theme.up : theme.down,
+    },
+    {
+      label: "TEST R²",
+      val: m.test_r2 !== null ? m.test_r2.toFixed(3) : "—",
+      color: theme.text,
+    },
+    {
+      label: "HIT RATE",
+      val: m.hit_rate !== null ? `${(m.hit_rate * 100).toFixed(1)}%` : "—",
+      color: theme.text,
+    },
+    {
+      label: "L/S SPREAD",
+      val:
+        m.long_short_decile_spread !== null
+          ? `${m.long_short_decile_spread.toFixed(2)}%`
+          : "—",
+      color:
+        m.long_short_decile_spread !== null && m.long_short_decile_spread >= 0
+          ? theme.up
+          : theme.down,
+    },
+    { label: "N TRAIN", val: String(m.n_train), color: theme.text },
+    { label: "N TEST", val: String(m.n_test), color: theme.text },
+    { label: "N FEATURES", val: String(m.n_features), color: theme.text },
+    { label: "MODEL", val: `${d.engine} · ${d.model}`, color: theme.muted },
+  ];
+
+  // Feature importance: already sorted desc by backend, cap at 15
+  const fiData = d.feature_importance.slice(0, 15);
+  const fiHeight = Math.max(80, fiData.length * 16);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* metrics grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, minmax(0,1fr))",
+          gap: 4,
+        }}
+      >
+        {metricRows.map(({ label, val, color }) => (
+          <div
+            key={label}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 1,
+              alignItems: "center",
+              background: theme.panelHeader,
+              borderRadius: 3,
+              padding: "4px 2px",
+            }}
+          >
+            <span style={{ fontSize: theme.fontSize.micro, color: theme.muted, letterSpacing: "0.04em" }}>
+              {label}
+            </span>
+            <span className="num" style={{ fontSize: theme.fontSize.micro, color }}>
+              {val}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* feature importance — horizontal bar chart */}
+      {fiData.length > 0 && (
+        <div>
+          <div
+            style={{
+              fontSize: theme.fontSize.micro,
+              color: theme.muted,
+              letterSpacing: "0.04em",
+              marginBottom: 3,
+            }}
+          >
+            FEATURE IMPORTANCE
+          </div>
+          <div style={{ height: fiHeight }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                layout="vertical"
+                data={fiData}
+                margin={{ top: 0, right: 8, bottom: 0, left: 0 }}
+              >
+                <CartesianGrid stroke={theme.grid} strokeWidth={0.5} horizontal={false} />
+                <XAxis
+                  type="number"
+                  tick={{ fill: theme.muted, fontSize: theme.fontSize.micro }}
+                  stroke={theme.border}
+                  tickLine={false}
+                  tickFormatter={(v: number) => v.toFixed(3)}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="feature"
+                  tick={{ fill: theme.muted, fontSize: theme.fontSize.micro }}
+                  stroke={theme.border}
+                  tickLine={false}
+                  width={90}
+                  tickFormatter={(v: string) =>
+                    v.length > 12 ? v.slice(0, 11) + "…" : v
+                  }
+                />
+                <Tooltip
+                  content={<FImportTooltip />}
+                  cursor={{ fill: "rgba(255,255,255,0.03)" }}
+                  wrapperStyle={{ outline: "none" }}
+                />
+                <Bar dataKey="importance" isAnimationActive={false} fill={theme.accent}>
+                  {fiData.map((entry, i) => (
+                    <Cell key={i} fill={theme.accent} fillOpacity={0.9 - i * 0.04} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* predicted quantile returns — compact table */}
+      {d.pred_quantile_returns.length > 0 && (
+        <div>
+          <div
+            style={{
+              fontSize: theme.fontSize.micro,
+              color: theme.muted,
+              letterSpacing: "0.04em",
+              marginBottom: 3,
+            }}
+          >
+            PREDICTED QUANTILE RETURNS
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["DECILE", "MEAN RET", "N AVG"].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      fontSize: theme.fontSize.micro,
+                      color: theme.muted,
+                      fontWeight: 400,
+                      textAlign: "right",
+                      paddingRight: 8,
+                      paddingBottom: 2,
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {d.pred_quantile_returns.map((row) => (
+                <tr key={row.quantile}>
+                  <td
+                    style={{
+                      fontSize: theme.fontSize.micro,
+                      color: theme.muted,
+                      textAlign: "right",
+                      paddingRight: 8,
+                      paddingBottom: 2,
+                    }}
+                  >
+                    {row.quantile}
+                  </td>
+                  <td
+                    className="num"
+                    style={{
+                      fontSize: theme.fontSize.micro,
+                      color:
+                        row.mean_fwd_ret !== null && row.mean_fwd_ret >= 0
+                          ? theme.up
+                          : theme.down,
+                      textAlign: "right",
+                      paddingRight: 8,
+                      paddingBottom: 2,
+                    }}
+                  >
+                    {row.mean_fwd_ret !== null ? `${row.mean_fwd_ret.toFixed(2)}%` : "—"}
+                  </td>
+                  <td
+                    className="num"
+                    style={{
+                      fontSize: theme.fontSize.micro,
+                      color: theme.muted,
+                      textAlign: "right",
+                      paddingRight: 8,
+                      paddingBottom: 2,
+                    }}
+                  >
+                    {row.n_avg !== null ? row.n_avg.toFixed(0) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Provenance
+        source={env.source}
+        cacheHit={env.cache_hit}
+        stale={env.stale}
+        warnings={env.warnings}
+        fetchedAt={env.fetched_at}
+      />
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+function ModelZoo() {
+  const enginesAsync = useAsync(() => api.labEngines(), []);
+  const engines = enginesAsync.data?.engines ?? FALLBACK_ENGINES;
+  const defaultEngine = enginesAsync.data?.default_engine ?? engines[0] ?? "sklearn-ensemble";
+
+  const [engine, setEngine] = useState("");
+  const [model, setModel] = useState("");
+  const [horizon, setHorizon] = useState(21);
+  const [testFraction, setTestFraction] = useState(0.3);
+
+  const activeEngine = engine || defaultEngine;
+  const availableModels = modelsFor(activeEngine);
+  const activeModel = availableModels.includes(model) ? model : availableModels[0] ?? "xgb";
+
+  // Reset model when engine changes
+  useEffect(() => {
+    setModel("");
+  }, [activeEngine]);
+
+  const [job, setJob] = useState<LabJob | null>(null);
+  const [report, setReport] = useState<Envelope<ModelReport> | null>(null);
+  const [reportJobId, setReportJobId] = useState<string | null>(null);
+  const [launching, setLaunching] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [recent, setRecent] = useState<LabJob[]>([]);
+  const reportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (reportJobId) reportRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [reportJobId]);
+
+  const refreshRecent = () => {
+    api
+      .listLabRuns(8)
+      .then((r) => setRecent(r.jobs.filter((j) => j.kind === "model")))
+      .catch(() => {});
+  };
+
+  const launch = async () => {
+    setLaunching(true);
+    setErr(null);
+    setReport(null);
+    setReportJobId(null);
+    try {
+      const j = await api.createModelRun({
+        name: `${activeEngine}:${activeModel} · h${horizon}`,
+        engine: activeEngine,
+        model: activeModel,
+        horizon_days: horizon,
+        test_fraction: testFraction,
+      });
+      setJob(j);
+      refreshRecent();
+    } catch (e) {
+      setErr(
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "launch failed",
+      );
+    } finally {
+      setLaunching(false);
+    }
+  };
+
+  const openRun = async (j: LabJob) => {
+    setErr(null);
+    if (j.status === "done") {
+      setJob(null);
+      setReport(null);
+      setReportJobId(null);
+      try {
+        const env = await api.labModelReport(j.job_id);
+        setReport(env);
+        setReportJobId(j.job_id);
+      } catch (e) {
+        setErr(
+          e instanceof ApiError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : "load failed",
+        );
+      }
+    } else {
+      setJob(j);
+      setReport(null);
+      setReportJobId(null);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <PanelHead
+        figure={
+          report && report.data.metrics.test_ic !== null
+            ? report.data.metrics.test_ic.toFixed(3)
+            : undefined
+        }
+        deck={deckLine("lab-models")}
+        agate={<span style={{ letterSpacing: "0.06em" }}>OFF-API</span>}
+      />
+
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          padding: "8px 10px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        {/* config form */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0,1fr))",
+            gap: 8,
+          }}
+        >
+          <Field label="ENGINE">
+            <select
+              style={ctrl}
+              value={activeEngine}
+              onChange={(e) => setEngine(e.target.value)}
+            >
+              {engines.map((eng) => (
+                <option key={eng} value={eng}>
+                  {ENGINE_LABELS[eng] ?? eng}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="MODEL">
+            <select
+              style={ctrl}
+              value={activeModel}
+              onChange={(e) => setModel(e.target.value)}
+            >
+              {availableModels.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="HORIZON (days)">
+            <input
+              style={ctrl}
+              type="number"
+              min={1}
+              max={252}
+              value={horizon}
+              onChange={(e) =>
+                setHorizon(Math.max(1, Math.min(252, Number(e.target.value) || 21)))
+              }
+            />
+          </Field>
+          <Field label="TEST FRACTION">
+            <input
+              style={ctrl}
+              type="number"
+              min={0.1}
+              max={0.5}
+              step={0.05}
+              value={testFraction}
+              onChange={(e) =>
+                setTestFraction(
+                  Math.max(0.1, Math.min(0.5, Number(e.target.value) || 0.3)),
+                )
+              }
+            />
+          </Field>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            onClick={launch}
+            disabled={launching}
+            style={{
+              padding: "5px 14px",
+              background: theme.panelHeader,
+              color: theme.accent,
+              border: `1px solid ${theme.accent}`,
+              borderRadius: 4,
+              cursor: launching ? "default" : "pointer",
+              fontSize: theme.fontSize.micro,
+            }}
+          >
+            {launching ? "LAUNCHING…" : "TRAIN MODEL"}
+          </button>
+        </div>
+
+        {err && (
+          <div
+            style={{
+              fontSize: theme.fontSize.micro,
+              color: theme.down,
+              background: "rgba(248,81,73,0.08)",
+              border: `1px solid ${theme.down}`,
+              borderRadius: 3,
+              padding: "4px 8px",
+            }}
+          >
+            {err}
+          </div>
+        )}
+
+        {/* live progress */}
+        {job && job.status !== "done" && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              borderTop: `1px solid ${theme.grid}`,
+              paddingTop: 8,
+            }}
+          >
+            <span style={{ fontSize: theme.fontSize.micro, color: theme.muted }}>{job.name}</span>
+            <JobStatus
+              jobId={job.job_id}
+              streamUrl={labStreamUrl}
+              onComplete={async () => {
+                const jid = job.job_id;
+                setJob(null);
+                refreshRecent();
+                try {
+                  const env = await api.labModelReport(jid);
+                  setReport(env);
+                  setReportJobId(jid);
+                } catch (e) {
+                  setErr(
+                    e instanceof ApiError
+                      ? e.message
+                      : e instanceof Error
+                        ? e.message
+                        : "report load failed",
+                  );
+                }
+              }}
+              onFailed={(msg) => {
+                setErr(msg);
+                setJob(null);
+                refreshRecent();
+              }}
+            />
+          </div>
+        )}
+
+        {/* inline report */}
+        {report && (
+          <div
+            ref={reportRef}
+            style={{ borderTop: `1px solid ${theme.grid}`, paddingTop: 6 }}
+          >
+            <ModelReportView env={report} />
+          </div>
+        )}
+
+        {/* recent runs */}
+        <div style={{ borderTop: `1px solid ${theme.grid}`, paddingTop: 6 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 4,
+            }}
+          >
+            <span style={{ fontSize: theme.fontSize.micro, color: theme.muted, letterSpacing: "0.05em" }}>
+              RECENT RUNS
+            </span>
+            <button
+              onClick={refreshRecent}
+              style={{ ...ctrl, cursor: "pointer", padding: "1px 6px", fontSize: theme.fontSize.micro }}
+            >
+              REFRESH
+            </button>
+          </div>
+          {recent.length === 0 ? (
+            <div style={{ fontSize: theme.fontSize.micro, color: theme.muted }}>
+              none yet — run one above.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {recent.map((j, idx) => (
+                <button
+                  key={j.job_id}
+                  onClick={() => openRun(j)}
+                  title={j.job_id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    background: "transparent",
+                    border: "none",
+                    borderBottom: idx < recent.length - 1 ? `1px solid ${theme.grid}` : "none",
+                    color: theme.text,
+                    fontSize: theme.fontSize.micro,
+                    padding: "3px 2px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <span
+                    style={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {j.name}
+                  </span>
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      color:
+                        j.status === "done"
+                          ? theme.up
+                          : j.status === "failed"
+                            ? theme.down
+                            : theme.muted,
+                    }}
+                  >
+                    {j.status}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+registerWidget({
+  id: "lab-models",
+  title: "Model Zoo",
+  component: ModelZoo,
+  defaultSize: { w: 6, h: 18 },
+  minSize: { w: 4, h: 12 },
+  defaultConfig: {},
+  category: "Quant Lab",
+  description:
+    "ML model train/eval runner: sklearn-ensemble (xgb/rf/ensemble) or deep-zoo (mlp/lstm/transformer); metrics + feature importance inline",
+});

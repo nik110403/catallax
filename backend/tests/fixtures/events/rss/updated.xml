@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Markets</title>
+  <entry>
+    <title>Updated Alpha Bravo</title>
+    <id>u-1</id>
+    <link href="https://example.test/u"/>
+    <updated>2025-10-02T08:00:00Z</updated>
+  </entry>
+</feed>

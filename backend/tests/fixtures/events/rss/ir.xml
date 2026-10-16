@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>IR</title>
+    <item>
+      <title>Quarterly results</title>
+      <link>https://example.test/ir/1</link>
+      <guid>ir-1</guid>
+      <pubDate>Wed, 01 Oct 2025 14:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

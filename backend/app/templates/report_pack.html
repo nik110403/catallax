@@ -1,0 +1,907 @@
+<!--
+  DESIGN REGISTER (redesign pass, Phase 17 — renderer-side only, `sections`
+  input shape unchanged): institutional print research note, think a GS/JPM
+  weekly — not a data dump. A4 portrait via Chromium print emulation
+  (`page.pdf()` in report_pdf.py); no `@media screen` anywhere, no
+  interactivity, no dark mode, no page-load motion (print has no "load").
+
+    Typography — 'Liberation Serif', Georgia, "Times New Roman", serif for
+      BOTH body and headings (unchanged pairing from the prior pass; the
+      FIRST name changed — design review: the render container only has
+      Liberation Serif installed, Georgia was silently falling back the
+      whole time, so this declares what actually paints instead of what was
+      merely requested). No second webfont is added: charts.js documents
+      "zero network at render time" (`page.set_content()` never fetches),
+      and a Google-Font `<link>` would violate that AND risk a banned/
+      over-used display face for no reason a print register needs. Heading
+      hierarchy is built with weight/size/letter-spacing/rule lines instead
+      of a second family — h1 eyebrow+display size, h2 a ruled section
+      opener in the accent navy, h3 a compact sub-head. Running header/
+      footer (week + page) are set in report_pdf.py's Playwright
+      `header_template`/`footer_template`, same family. Body/table/caption
+      sizes are bumped ~15-20% over the original pass (design review
+      the real render runs 30-60% empty per page at the old sizes, and
+      `font-variant-numeric: tabular-nums` keeps every numeric table column
+      aligned at any size).
+    Palette — near-monochrome ink (#1a1a1a) on white, structural navy
+      (#1b3a5c) for rules/headings, muted gray (#555/#666/#999) for
+      captions/labels, ONE warm accent (#c98a3a amber) for callouts/annotation
+      rules. Positive/negative are conventional green (#5c8a5c) / red
+      (#8a3a3a) — reserved for FIGURES (deltas, sparkline direction, bar
+      sign), never decorative. This is the palette the prior pass already
+      established; carried forward unchanged — the redesign's job was
+      structure/content, not re-theming a palette that already satisfied the
+      brief.
+    Grid — generous print margins (set in report_pdf.py: 24/20/15/15mm),
+      ruled section openers (`h2` bottom-border), `.chapter` starts on a new
+      page (`page-break-before`); cards/tables/panels carry
+      `break-inside: avoid` so print pagination never guillotines a row or a
+      tear-sheet card mid-element.
+    Motion — none; this is a static PDF.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Catallax Weekly Report Pack — {{ report_week }}</title>
+<style>
+  * { box-sizing: border-box; }
+  /* Design review: 'Liberation Serif' declared FIRST — it's the only
+     serif actually installed in the render container (Dockerfile.report is
+     out of scope to touch for deploy reasons), so Georgia was a silent,
+     invisible fallback the whole prior pass. Georgia/Times New Roman stay
+     in the stack for any OTHER environment (e.g. a host preview) that does
+     have them. */
+  body {
+    font-family: 'Liberation Serif', Georgia, "Times New Roman", serif;
+    color: #1a1a1a;
+    margin: 0;
+    font-size: 13px; /* P1.4: +18% over the prior 11px — page economy allows it */
+    line-height: 1.5;
+  }
+  h1, h2, h3, h4 { font-family: 'Liberation Serif', Georgia, "Times New Roman", serif; margin: 0 0 8px 0; }
+  /* break-after: avoid (P1.7) — a heading must never be the last thing on a
+     page with its own content pushed to the next one (e.g. "Market pulse"
+     orphaned at the foot of a page in the design review's real-render
+     review). */
+  h1 { font-size: 32px; letter-spacing: 0.01em; }
+  h2 { font-size: 18px; border-bottom: 1.5px solid #1b3a5c; padding-bottom: 4px; color: #1b3a5c; break-after: avoid; }
+  h3 { font-size: 14px; color: #222; margin-bottom: 6px; break-after: avoid; }
+  h4 { font-size: 11.5px; color: #666; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; break-after: avoid; }
+  p { margin: 0 0 8px 0; }
+
+  /* ── cover ─────────────────────────────────────────────────────── */
+  .cover {
+    height: 246mm;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+  }
+  .cover .masthead { padding-top: 6mm; }
+  .cover .eyebrow { letter-spacing: 0.18em; text-transform: uppercase; font-size: 11px; color: #666; }
+  .cover .week-range { font-size: 13px; color: #555; margin-top: 4px; }
+  .cover .kpi-band {
+    display: flex; gap: 0; margin: 20px 0 0 0;
+    border-top: 1.5px solid #1b3a5c; border-bottom: 1px solid #ddd;
+  }
+  .cover .kpi-band .kpi-tile {
+    flex: 1; padding: 10px 12px; border-right: 1px solid #ddd;
+  }
+  .cover .kpi-band .kpi-tile:last-child { border-right: none; }
+  /* #666/#96631f/#457a45 below are deliberately darker than the original
+     #888/#c98a3a/#5c8a5c picks — WCAG AA text-contrast fix (self-run
+     detector, `low-contrast`): #888 on white is 3.5:1, #c98a3a 2.9:1,
+     #5c8a5c 4.0:1, all under the 4.5:1 body-text floor. Border/decoration
+     uses of the original brighter amber/green (`.how-to-read`'s left rule,
+     chart line strokes in vendor/charts.js) are unaffected — contrast only
+     binds on TEXT, and those are non-text accents. */
+  .kpi-tile .kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: #666; }
+  .kpi-tile .kpi-value { font-size: 16px; margin-top: 3px; }
+  .kpi-tile .kpi-value.negative { color: #8a3a3a; }
+  .kpi-tile .kpi-value.positive { color: #457a45; }
+  .cover .toc { margin-top: auto; padding-bottom: 8mm; }
+  /* `<h2 class="toc-heading">`, not `<h3>`/`<h4>`: keeps the document
+     outline sequential (h1 cover title -> h2 "Contents" -> h2 per chapter,
+     see `test_render_html_*` for the heading-order assertion) while
+     resetting h2's chapter-opener rule/size/color for this small-caps label. */
+  .cover .toc .toc-heading {
+    border: none; padding: 0; margin: 0; border-top: 1px solid #ddd; padding-top: 10px;
+    font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.06em; font-weight: normal;
+  }
+  .cover .toc ol { list-style: none; margin: 6px 0 0 0; padding: 0; counter-reset: toc; }
+  /* Fix round 7: the prior dotted `border-bottom`
+     visually read as a dot-leader — the classic "Chapter ...... 5" TOC
+     convention that promises a page number at the end of the line. Nothing
+     here supplies one (Chromium's print pagination isn't known until the
+     PDF is actually laid out), so the dots were a promise the render
+     can't keep. Plain rows: a single hairline divider, no leader
+     semantics. */
+  .cover .toc li {
+    counter-increment: toc; font-size: 13px; padding: 5px 0; border-bottom: 1px solid #eee;
+  }
+  .cover .toc li::before {
+    content: counter(toc, decimal-leading-zero) "  "; color: #96631f; font-weight: bold;
+  }
+
+  /* ── chapters, shared primitives ──────────────────────────────── */
+  .chapter { page-break-before: always; padding-top: 4px; }
+  .caption {
+    font-size: 11px; color: #666; margin: -4px 0 10px 0;
+  }
+  .how-to-read {
+    font-size: 11.5px; color: #555; font-style: italic;
+    border-left: 2px solid #c98a3a; padding-left: 8px; margin: 6px 0 12px 0;
+  }
+  .muted { color: #666; font-size: 11.5px; }
+  /* Micro suffix (P1.11) — a muted, smaller-than-caption inline note
+     appended to a piece of text (e.g. a news headline's "· substring
+     match"), never its own block — distinct from `.caption` on purpose.
+     Fix round 7: #999 on white is
+     2.85:1, well under the 4.5:1 AA floor for text this small — #767676
+     is the standard AA-passing mid-gray (4.54:1) and stays visually
+     "quieter" than `.caption`'s #666, preserving the intended hierarchy. */
+  .micro { font-size: 9.5px; color: #767676; }
+  .absent { color: #8a3a3a; font-style: italic; }
+  table {
+    border-collapse: collapse; width: 100%; margin: 8px 0 14px 0; font-size: 11.5px;
+    /* P1.7: orphans/widows — a table must never leave a single dangling row
+       (or a caption alone) at the top/bottom of a page split. */
+    orphans: 3; widows: 3;
+  }
+  th, td {
+    border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: right;
+    /* P1.3: lining, fixed-width digits so a numeric column never wobbles
+       between rows (a real risk once figures are packed this tight). */
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { color: #666; font-weight: normal; border-bottom: 1px solid #1b3a5c; }
+  tr.tail-row td { color: #666; font-style: italic; }
+  /* Phase 18: empty calibration-bin rows (n=0, listed honestly rather
+     than dropped) get the same dimmed treatment as a tail-row.
+     Fix-first #4: #999 on white is 2.85:1, under the
+     4.5:1 AA floor — reuse `tr.tail-row`'s AA-passing #666 + italic, and
+     the row's "empty" state is now also marked in text (the bin cell's
+     "(n=0)" span, see report_pack.html), never colour alone. */
+  tr.bin-empty td { color: #666; font-style: italic; }
+  /* Fix: `.micro`'s #767676 is
+     lighter than `tr.bin-empty`'s own #666 — the "(n=0)" marker rendered
+     FAINTER than the already-muted row it flags, the opposite of what a
+     marker should do. Inherit the row's own color here instead; `.micro`'s
+     other use (the holdings news "· substring match" suffix) sits in a
+     normal, dark-text row, where staying deliberately quieter is correct
+     and untouched. */
+  tr.bin-empty .micro { color: inherit; }
+  .chart-block { margin: 10px 0 18px 0; break-inside: avoid; }
+  .chart-block canvas { display: block; }
+  .two-col { display: flex; gap: 24px; }
+  .two-col > div { flex: 1; min-width: 0; }
+  .three-col { display: flex; gap: 18px; }
+  .three-col > div { flex: 1; min-width: 0; }
+
+  /* ── "In plain terms" panel (rule 3, extended per-chapter — feature) ─ */
+  /* One shared style for all six boxes (exec summary + the five analytical
+     chapters — Methodology gets none, it IS the explainer), rendered via the
+     `plain_terms_box` Jinja macro so markup never drifts between them. A
+     thick colored left-border accent on a card is the single most
+     recognizable AI-slop "side-tab" tell (self-run detector flagged the
+     original `border-left: 4px`) — this panel is set off by a full 1px
+     rule + tint fill + a small-caps label instead, no accent bar. */
+  .plain-terms {
+    border: 1px solid #1b3a5c;
+    background: #f7f9fb; padding: 10px 14px; margin: 4px 0 16px 0; break-inside: avoid;
+  }
+  /* P3a: NOT an `<h4>` — a real heading here skips levels in the document
+     outline (this is an aside interpreting the chapter, not a new section
+     of it). Same visual treatment as the base `h4` rule above (uppercase,
+     letter-spacing, small size) reproduced explicitly since `<p>` has none
+     of that by default. */
+  .plain-terms-label {
+    color: #1b3a5c; font-size: 11.5px; font-weight: bold; text-transform: uppercase;
+    letter-spacing: 0.06em; margin: 0 0 6px 0;
+  }
+  /* Fix round 7: was 10.5px — smaller than BOTH body text (13px) and table
+     text (11.5px), inverting the hierarchy on the one panel explicitly
+     meant for a non-quant reader. Matches body size exactly; still reads
+     as a distinct panel via the border/tint/label, not a smaller font. */
+  .plain-terms p { font-size: 13px; margin-bottom: 5px; }
+  .plain-terms p:last-child { margin-bottom: 0; }
+
+  /* ── allocation legend ────────────────────────────────────────── */
+  .legend { list-style: none; margin: 8px 0 0 0; padding: 0; font-size: 11.5px; }
+  .legend li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+  .legend .swatch { width: 9px; height: 9px; display: inline-block; flex: none; }
+  .legend .lbl { flex: 1; color: #333; }
+  .legend .pct { color: #666; font-variant-numeric: tabular-nums lining-nums; }
+
+  /* ── market: stat groups / pulse ──────────────────────────────── */
+  .stat-group { border: 1px solid #ddd; padding: 8px 10px; margin-bottom: 12px; break-inside: avoid; }
+  .stat-group h4 { border-bottom: 1px solid #eee; padding-bottom: 4px; }
+  /* P1.6: `gap` + a fixed label column stop a long label
+     ("Limitations", "Not available this week: ...") from colliding with its
+     value — `.k` no longer flex-shrinks into the value's space, and the
+     value column (`:last-child` — every `.kv`/`.stat-row` is exactly
+     `<span class="k">` + one value `<span>`) always right-aligns in the
+     remaining width instead of hugging whatever the label left over. */
+  .stat-row {
+    display: flex; justify-content: space-between; gap: 16px;
+    border-bottom: 1px dotted #eee; padding: 2px 2px; font-size: 11.5px;
+  }
+  .stat-row .k { color: #666; flex: 0 0 34%; }
+  .stat-row > span:last-child { flex: 1 1 0; min-width: 0; text-align: right; font-variant-numeric: tabular-nums lining-nums; }
+  .kv-list { margin: 4px 0 10px 0; }
+  .kv-list .kv { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px dotted #ddd; padding: 2px 2px; }
+  .kv-list .kv .k { color: #666; flex: 0 0 34%; }
+  .kv-list .kv > span:last-child { flex: 1 1 0; min-width: 0; text-align: right; font-variant-numeric: tabular-nums lining-nums; }
+  .evidence-note {
+    font-size: 11.5px; background: #f4ede1; border: 1px solid #e0d3b8;
+    padding: 6px 8px; margin-bottom: 10px;
+  }
+
+  /* ── holdings tear sheets ──────────────────────────────────────── */
+  .holding-card {
+    border: 1px solid #ddd; border-radius: 3px; padding: 8px 10px;
+    margin-bottom: 10px; break-inside: avoid;
+  }
+  .holding-card .row { display: flex; justify-content: space-between; align-items: center; }
+  /* Fix round 7: the collapsed absent-holdings block (rule 3 grouping) —
+     deliberately NOT `.holding-card` (no border/box), so it reads as one
+     compact footnote-style block after the real cards, not a 13th card. */
+  .holding-absent-group { margin-bottom: 10px; break-inside: avoid; }
+  .holding-absent-group p { margin-bottom: 4px; }
+  .holding-absent-group p:last-child { margin-bottom: 0; }
+  .methodology-tool { margin-bottom: 10px; break-inside: avoid; }
+  .methodology-tool .name { font-weight: bold; }
+  /* Fix round 7: `.kv-list`'s default right-align is correct for short/
+     numeric values (the common case elsewhere in the pack) but reads as
+     ragged, right-hugging prose for Methodology's Limitations/Endpoint/
+     Measures rows, which are full sentences — left-align only here. */
+  .methodology-tool .kv-list .kv > span:last-child { text-align: left; }
+  .conventions p { font-size: 10px; color: #333; }
+</style>
+</head>
+<body>
+
+{# Shared "In plain terms" box (rule 3 + its per-chapter extension) — every
+   chapter's box (exec summary + the five analytical chapters) renders
+   through this one macro so the style/markup never drifts between them.
+   `lines` is a plain list[str] of already-value-gated sentences built in
+   report_pdf.py; a chapter with nothing to say (all its inputs missing)
+   passes an empty list and the box renders nothing at all.
+   P3a: the label used to be an `<h4>`, which sits
+   directly after each chapter's `<h2>`/`<h3>` — a real heading there skips
+   levels in the document outline (an aside interpreting the chapter reads
+   as a new SECTION of it to assistive tech). It is now a styled `<p>`
+   carrying the identical visual treatment (small-caps, navy, uppercase)
+   without being a heading at all. #}
+{% macro plain_terms_box(lines) %}
+{% if lines %}
+<div class="plain-terms">
+  <p class="plain-terms-label">In plain terms</p>
+  {% for line in lines %}<p>{{ line }}</p>{% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{# chapters that a pack may legitimately never have built at
+   all — see the longer comment further down, right above the main chapter
+   loop, for why a wholly missing key here must render nothing (not even
+   the heading), unlike the seven core chapters. Set once, up here, so both
+   the TOC listing and the chapter loop below share one definition. #}
+{% set _optional_chapters = ("forecasts", "calibration") %}
+
+<section class="cover">
+  <div class="masthead">
+    <div class="eyebrow">Catallax Terminal</div>
+    <h1>Weekly Report Pack</h1>
+    <div class="week-range">Week {{ report_week }}{% if week_range %} · {{ week_range }}{% endif %}</div>
+  </div>
+  <div class="kpi-band">
+    <div class="kpi-tile">
+      <div class="kpi-label">NAV</div>
+      <div class="kpi-value">{{ cover.nav_eur | eur if cover.nav_eur is not none else "—" }}</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-label">WoW</div>
+      <div class="kpi-value {{ 'negative' if cover.wow_pct is not none and cover.wow_pct < 0 else ('positive' if cover.wow_pct is not none and cover.wow_pct > 0 else '') }}">{{ cover.wow_pct | pct(2, true) }}</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-label">Regime</div>
+      <div class="kpi-value">{{ cover.regime or "—" }}</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-label">VaR 95% (1d)</div>
+      <div class="kpi-value">{{ cover.var95_eur | eur if cover.var95_eur is not none else "—" }}</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-label">Cash</div>
+      <div class="kpi-value">{{ cover.cash_pct | pct if cover.cash_pct is not none else "—" }}</div>
+    </div>
+  </div>
+  <div class="toc">
+    <h2 class="toc-heading">Contents</h2>
+    <ol>
+    {% for key, title in chapter_order %}
+      {% if key not in _optional_chapters or sections.get(key) is not none %}<li>{{ title }}</li>{% endif %}
+    {% endfor %}
+    {% if render_warnings %}<li>Render Warnings</li>{% endif %}
+    </ol>
+  </div>
+</section>
+
+{# `forecasts`/`calibration` are ADDITIVE chapters a pack may
+   legitimately never have built at all (an older pack, or a
+   calibration chapter-build failure, which drops the key entirely rather
+   than writing an absent stand-in — see report_pdf.py's module docstring).
+   Unlike the seven core chapters (always attempted, so `chapter.get(
+   "absent")` below is the right guard for THEM), a wholly MISSING key here
+   must render NOTHING — not even the heading — so an older/degraded pack
+   renders byte-for-byte as it did before this item (every `.chapter` forces
+   a page break, so a heading-only stub would silently cost a page). A key
+   that IS present but wrapped `{"absent": True, "reason": ...}` (forecasts'
+   own issuance-failure path) still uses the normal absent-reason branch
+   below, same as any other chapter. #}
+{% for key, title in chapter_order %}
+{% if key not in _optional_chapters or sections.get(key) is not none %}
+{% set chapter = sections.get(key) or {} %}
+<section class="chapter" id="chapter-{{ key }}">
+  <h2>{{ title }}</h2>
+  {% if chapter.get("absent") %}
+    <p class="absent">Not available this week — {{ chapter.get("reason", "no data") }}</p>
+  {% else %}
+    {% if chapter.get("how_to_read") %}<p class="how-to-read">How to read this chapter: {{ chapter["how_to_read"] }}</p>{% endif %}
+
+    {% if key == "exec_summary" %}
+      {% if chapter.get("narration") %}
+        <p>{{ chapter["narration"] }}</p>
+      {% elif chapter.get("narration_absent_reason") %}
+        <p class="how-to-read">Not narrated: {{ chapter["narration_absent_reason"] }}</p>
+      {% elif chapter.get("headline") %}
+        <p>{{ chapter["headline"] }}</p>
+      {% endif %}
+
+      {% if top5_positions %}
+      <h3>Top positions</h3>
+      <table>
+        <thead><tr><th>Symbol</th><th>Weight</th></tr></thead>
+        <tbody>
+        {% for p in top5_positions %}
+          <tr><td>{{ p.get("symbol", "—") }}</td><td>{{ p.get("weight_pct") | pct }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      {% if shadow_rollup %}<p class="muted">{{ shadow_rollup }}</p>{% endif %}
+
+      {{ plain_terms_box(plain_terms) }}
+
+    {% elif key == "portfolio" %}
+      <div class="two-col">
+        <div class="chart-block">
+          <h3>Allocation</h3>
+          <canvas data-chart="allocation_donut" width="220" height="200"></canvas>
+          {% if pv.allocation_legend %}
+          <ul class="legend">
+          {% for l in pv.allocation_legend %}
+            <li><span class="swatch" style="background:{{ l.color }};"></span><span class="lbl">{{ l.label }}</span><span class="pct">{{ "%.1f"|format(l.pct) }}%</span></li>
+          {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        <div class="chart-block">
+          <h3>Scorecard — cumulative TWR</h3>
+          {% if pv.scorecard.get("depth_weeks") is none or pv.scorecard.get("empty") or pv.scorecard.get("depth_weeks", 0) < 2 %}
+            <p class="muted">Return scorecard: insufficient history — needs ≥2 snapshot weeks.</p>
+          {% else %}
+            <canvas data-chart="nav_line" width="340" height="200"></canvas>
+            <div class="kv-list">
+              <div class="kv"><span class="k">Actual</span><span>{{ pv.scorecard.get("actual_twr") | pct(2, true, 100) }}</span></div>
+              <div class="kv"><span class="k">Do-nothing</span><span>{{ pv.scorecard.get("do_nothing_twr") | pct(2, true, 100) }}</span></div>
+            </div>
+            {% if pv.scorecard.get("note") %}<p class="caption">{{ pv.scorecard["note"] }}</p>{% endif %}
+          {% endif %}
+        </div>
+      </div>
+
+      {% if pv.top %}
+      <h3>Positions</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th><th>Value</th><th>Weight</th>
+            {% if pv.wow_available %}<th>WoW %pt</th><th>WoW €</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in pv.top %}
+          <tr>
+            <td>{{ p.get("symbol", "—") }}</td>
+            <td>{{ p.get("value_eur") | eur if p.get("value_eur") is not none else "—" }}</td>
+            <td>{{ p.get("weight_pct") | pct }}</td>
+            {% if pv.wow_available %}
+            <td>{{ p.get("wow_weight_delta_pct") | pct(1, true) }}</td>
+            <td>{{ p.get("wow_value_delta_eur") | eur if p.get("wow_value_delta_eur") is not none else "—" }}</td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        {% if pv.tail %}
+          <tr class="tail-row">
+            <td colspan="{{ 5 if pv.wow_available else 3 }}">Tail: {{ pv.tail.n_label }}, {{ pv.tail.value_eur | eur }}, {{ "%.1f"|format(pv.tail.weight_pct) }}% of NAV</td>
+          </tr>
+        {% endif %}
+        </tbody>
+      </table>
+      {% if not pv.wow_available %}<p class="caption">Week-over-week deltas unavailable — first snapshot week.</p>{% endif %}
+      {% endif %}
+
+      {% if pv.var_cvar %}
+      <h3>Risk (VaR / CVaR)</h3>
+      <table>
+        <thead><tr><th>Measure</th><th>95%</th><th>99%</th></tr></thead>
+        <tbody>
+          <tr><td>VaR</td><td>{{ pv.var_cvar.get("var_eur") | eur if pv.var_cvar.get("var_eur") is not none else "—" }} ({{ pv.var_cvar.get("var_pct") | pct }})</td><td>{{ pv.var_cvar.get("var99_eur") | eur if pv.var_cvar.get("var99_eur") is not none else "—" }}</td></tr>
+          <tr><td>CVaR</td><td>{{ pv.var_cvar.get("cvar_eur") | eur if pv.var_cvar.get("cvar_eur") is not none else "—" }} ({{ pv.var_cvar.get("cvar_pct") | pct }})</td><td>{{ pv.var_cvar.get("cvar99_eur") | eur if pv.var_cvar.get("cvar99_eur") is not none else "—" }}</td></tr>
+        </tbody>
+      </table>
+      <div class="kv-list">
+        <div class="kv"><span class="k">Fat-tail ratio (CVaR95/VaR95)</span><span>{{ pv.var_cvar.get("fat_tail_ratio") | num }}</span></div>
+        <div class="kv"><span class="k">Worst modeled day</span><span>{{ pv.var_cvar.get("worst_day", "—") }} ({{ pv.var_cvar.get("worst_day_pct") | pct }})</span></div>
+      </div>
+      {% if pv.coverage_sentence %}<p class="caption">{{ pv.coverage_sentence }}</p>{% endif %}
+      {% if pv.var_cvar.get("low_confidence") %}<p class="how-to-read">Low confidence — few historical scenarios behind this VaR/CVaR reading.</p>{% endif %}
+      {% endif %}
+
+      {{ plain_terms_box(plain_terms_portfolio) }}
+
+    {% elif key == "market" %}
+      {% set regime = mv.regime %}
+      {% if regime %}
+      <div class="two-col">
+        <div class="chart-block">
+          <h3>Regime composite</h3>
+          <canvas data-chart="regime_history_line" width="340" height="180"></canvas>
+          <p class="caption">State: {{ regime.get("state", "—") }} · score {{ regime.get("score") | num(2) }}{% if regime.get("recession_flag") %} · recession flag set{% endif %}</p>
+        </div>
+        <div>
+          {% if mv.regime_components.rows %}
+          <h3>Components</h3>
+          <table>
+            <thead><tr><th>Component</th><th>Score</th><th>Weight</th><th>Contribution</th></tr></thead>
+            <tbody>
+            {% for c in mv.regime_components.rows %}
+              <tr>
+                <td>{{ c.label }}</td>
+                <td>{{ c.score | num(2) }}</td>
+                <td>{{ c.weight | pct(0, false, 100) }}</td>
+                <td>{{ c.contribution | num(3) }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+          {% if mv.regime_components.missing_note %}
+          <p class="muted">{{ mv.regime_components.missing_note }}</p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if mv.cross_asset.get("snapshot") %}
+      <h3>Cross-asset</h3>
+      <table>
+        <thead><tr><th>Symbol</th><th>Last</th><th>1d</th><th>1w</th><th>1m</th><th>YTD</th></tr></thead>
+        <tbody>
+        {% for s in mv.cross_asset["snapshot"][:15] %}
+          <tr>
+            <td>{{ s.get("label") or s.get("symbol", "—") }}</td>
+            <td>{{ s.get("last") | num(2) }}</td>
+            <td>{{ s.get("chg_1d_pct") | pct(1, true) }}</td>
+            <td>{{ s.get("chg_1w_pct") | pct(1, true) }}</td>
+            <td>{{ s.get("chg_1m_pct") | pct(1, true) }}</td>
+            <td>{{ s.get("chg_ytd_pct") | pct(1, true) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      {% if mv.corr_pairs.top or mv.corr_pairs.bottom %}
+      <div class="two-col">
+        <div>
+          <h4>Highest correlated pairs</h4>
+          <ul class="legend">
+          {% for p in mv.corr_pairs.top %}<li><span class="lbl">{{ p.pair }}</span><span class="pct">{{ p.value | num(2) }}</span></li>{% endfor %}
+          </ul>
+        </div>
+        <div>
+          <h4>Lowest correlated pairs</h4>
+          <ul class="legend">
+          {% for p in mv.corr_pairs.bottom %}<li><span class="lbl">{{ p.pair }}</span><span class="pct">{{ p.value | num(2) }}</span></li>{% endfor %}
+          </ul>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if mv.volatility_rows or mv.breadth_rows or mv.sentiment_rows %}
+      <h3>Market pulse</h3>
+      <div class="three-col">
+        {% if mv.volatility_rows %}
+        <div class="stat-group">
+          <h4>Volatility</h4>
+          {% for r in mv.volatility_rows %}<div class="stat-row"><span class="k">{{ r.label }}</span><span>{{ r.value }}</span></div>{% endfor %}
+        </div>
+        {% endif %}
+        {% if mv.breadth_rows %}
+        <div class="stat-group">
+          <h4>Breadth</h4>
+          {% for r in mv.breadth_rows %}<div class="stat-row"><span class="k">{{ r.label }}</span><span>{{ r.value }}</span></div>{% endfor %}
+        </div>
+        {% endif %}
+        {% if mv.sentiment_rows %}
+        <div class="stat-group">
+          <h4>Sentiment</h4>
+          {% for r in mv.sentiment_rows %}<div class="stat-row"><span class="k">{{ r.label }}</span><span>{{ r.value }}</span></div>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if mv.valuation_rows or mv.valuation_needs_source %}
+      <h3>Valuation</h3>
+      {% if mv.valuation_rows %}
+      <div class="stat-group">
+        {% for r in mv.valuation_rows %}<div class="stat-row"><span class="k">{{ r.label }}</span><span>{{ r.value }}</span></div>{% endfor %}
+      </div>
+      {% endif %}
+      {% if mv.valuation_needs_source %}<p class="muted">Sources needed: {{ mv.valuation_needs_source | join(", ") }}</p>{% endif %}
+      {% endif %}
+
+      {% if mv.calendar.rows %}
+      <h3>Week-ahead calendar</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th><th style="text-align:left;">Event</th>
+            {% if mv.calendar.show_actual_cols %}<th>Actual</th><th>Previous</th><th>Consensus</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in mv.calendar.rows %}
+          <tr>
+            <td>{{ e.date or "—" }}</td><td style="text-align:left;">{{ e.event }}</td>
+            {% if mv.calendar.show_actual_cols %}<td>{{ e.actual or "—" }}</td><td>{{ e.previous or "—" }}</td><td>{{ e.consensus or "—" }}</td>{% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      {% if mv.calendar.stale_note %}<p class="how-to-read">{{ mv.calendar.stale_note }}</p>{% endif %}
+
+      {{ plain_terms_box(plain_terms_market) }}
+
+    {% elif key == "holdings" %}
+      {% if chapter.get("n_symbols_failed") %}
+      <p class="how-to-read">{{ chapter["n_symbols_failed"] | plural("symbol") }} unavailable this week{% if chapter.get("symbols_failed") is mapping %}: {{ chapter["symbols_failed"].keys() | join(", ") }}{% endif %}.</p>
+      {% endif %}
+
+      {% for card in hv.material %}
+      {# Fix round 7: `hv.material` now holds ONLY
+         real (non-absent) entries — absent material symbols are grouped
+         below instead of getting one card each (see `hv.absent_groups`
+         block and `_holdings_view`'s docstring). #}
+      {% set symbol = card.symbol %}{% set h = card.entry %}
+      {% set pos = pv.top | selectattr("symbol", "equalto", symbol) | list %}
+      <div class="holding-card">
+        <div class="row">
+          <h3>{{ symbol }}{% if pos %} — {{ pos[0].get("weight_pct") | pct }}{% endif %}</h3>
+          <canvas data-chart="{{ symbol | spark_key }}" width="120" height="32"></canvas>
+        </div>
+        {% set fund = h.get("fundamentals") or {} %}
+        {% set val = h.get("valuation") or {} %}
+        {% set tech = h.get("technicals") or {} %}
+        {# P2.16: fixed slot skeleton — score/sector/price/trend/RSI ALWAYS
+           render a row (em-dash for missing), so every card shares one
+           shape instead of jumping around by however much data happened to
+           be available. Fix round 7: Piotroski's score and verdict used to
+           print in two places (this row's number AND a duplicate row from
+           the forensic-cards loop below) — one merged slot now
+           (`holding_scores` -> "6.0 · Moderate", built in `_holding_scores`). #}
+        <div class="kv-list">
+          <div class="kv"><span class="k">Piotroski F-Score</span><span>{{ holding_scores.get(symbol, "—") }}</span></div>
+          <div class="kv"><span class="k">Sector</span><span>{{ fund.get("sector") or "—" }}</span></div>
+          <div class="kv"><span class="k">Price</span><span>{{ val.get("price") | eur if val.get("price") is not none else "—" }}</span></div>
+          <div class="kv"><span class="k">Trend</span><span>{{ tech.get("trend") or "—" }}</span></div>
+          <div class="kv"><span class="k">RSI 14</span><span>{{ tech.get("rsi_14") | num(1) }}</span></div>
+        </div>
+        {# `card.other_forensic_cards` already excludes the piotroski card —
+           it has its own merged slot above, never printed twice. #}
+        {% if card.other_forensic_cards and not card.forensic_blank %}
+        <div class="kv-list">
+          {% for fc in card.other_forensic_cards %}
+          <div class="kv"><span class="k">{{ fc.get("label", fc.get("key", "—")) }}</span><span>{{ fc.get("verdict") or fc.get("score") or "—" }}</span></div>
+          {% endfor %}
+        </div>
+        {% elif card.is_crypto %}
+        <p class="caption">Forensic scores n/a for crypto.</p>
+        {% endif %}
+        {% set scan = h.get("scan") or {} %}
+        {% if scan.get("n_hits") %}<p class="caption">Pattern scan: {{ scan["n_hits"] | plural("hit") }}.</p>{% endif %}
+        {% if h.get("news") %}
+        <div class="kv-list">
+          {% for n in h["news"][:2] %}
+          {# P1.11: a substring-matched headline reads as an error without
+             this suffix (e.g. an unrelated "Dynatrace" headline under an
+             ETH card) — `intel_service`'s holdings filter IS a plain
+             case-insensitive substring match, not an entity link, so this
+             is honest, not an apology. #}
+          <div class="kv"><span>{{ n.get("title", n) if n is mapping else n }}<span class="micro"> · substring match</span></span></div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {% if hv.absent_groups %}
+      {# A book with many
+         material positions with no tear-sheet entry would otherwise print one identical
+         "Tear sheet unavailable — no data recorded..." card each: pages
+         of repetition. Grouped by DISTINCT reason instead: the synthetic
+         "no data recorded" cohort collapses to one sentence naming every
+         symbol + weight; a genuine per-symbol reason still gets its own
+         line, never merged with an unrelated one. Every material symbol is
+         still findable by name + weight + reason — nothing here is hidden,
+         only de-duplicated. #}
+      <div class="holding-absent-group">
+        <h3>Other material holdings — no tear sheet</h3>
+        {% for group in hv.absent_groups %}
+        <p class="absent">Tear sheet unavailable — {{ group.reason }}: {{ group.symbols_label }}.</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if hv.roster %}
+      <h3>Other holdings</h3>
+      <table>
+        <thead><tr><th>Symbol</th><th>Value</th><th>Weight</th><th style="text-align:left;">Trend</th></tr></thead>
+        <tbody>
+        {% for r in hv.roster %}
+          <tr>
+            <td>{{ r.symbol }}</td>
+            <td>{{ r.value_eur | eur if r.value_eur is not none else "—" }}</td>
+            <td>{{ r.weight_pct | pct }}</td>
+            <td style="text-align:left;">{{ r.trend or "—" }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      {{ plain_terms_box(plain_terms_holdings) }}
+
+    {% elif key == "quant" %}
+      {% set factor = chapter.get("factor") or {} %}
+      {% if factor.get("absent") %}
+      <p class="absent">Factor study unavailable this week — {{ factor.get("reason", "no data") }}</p>
+      {% else %}
+      {% if factor.get("stale") %}<p class="how-to-read">This factor reading is carried over from the last completed pack (stale — this week's study did not complete in time).</p>{% endif %}
+      <div class="kv-list">
+        <div class="kv"><span class="k">Factor</span><span>{{ factor.get("factor", "—") }}</span></div>
+        <div class="kv"><span class="k">Horizon (days)</span><span>{{ factor.get("horizon_days", "—") }}</span></div>
+        <div class="kv"><span class="k">Universe (n symbols)</span><span>{{ factor.get("n_symbols", "—") }}</span></div>
+        <div class="kv"><span class="k">IC mean</span><span>{{ factor.get("ic_mean") | num(4) }}</span></div>
+        <div class="kv"><span class="k">IC IR</span><span>{{ factor.get("ic_ir") | num(3) }}</span></div>
+        <div class="kv"><span class="k">Long/short spread</span><span>{{ factor.get("long_short_spread") | pct(2, true, 100) }}</span></div>
+      </div>
+      <p class="how-to-read">Cross-section universe: {{ factor.get("n_symbols") | plural("name") }} — a book this
+        size is a within-book ordering, not an independent market factor reading.</p>
+      {% for w in (factor.get("warnings") or []) %}<p class="how-to-read">{{ w }}</p>{% endfor %}
+      {% if factor.get("ic_series") %}
+      <div class="chart-block">
+        <h3>Factor IC (by date)</h3>
+        <canvas data-chart="factor_ic_bars" width="560" height="180"></canvas>
+      </div>
+      {% endif %}
+      {% if quantile_view.collapsed %}
+      {# P1.2: every bucket's forward return is null AND the
+         N (avg) column is the same degenerate repeated float on every row —
+         a real "universe too small" state, not "no data" — collapse to one
+         sentence instead of a wall of em-dashes next to a suspicious N. #}
+      <p class="muted">Quantile returns unavailable — universe too small.</p>
+      {% elif quantile_view.rows %}
+      <h3>Quantile returns</h3>
+      <table>
+        <thead><tr><th>Bucket</th><th>Mean fwd. return</th><th>N (avg)</th></tr></thead>
+        <tbody>
+        {% for q in quantile_view.rows %}
+          <tr>
+            <td>{{ q.get("quantile", "—") }}</td>
+            <td>{{ q.get("mean_fwd_ret_pct") | pct(2, true) }}</td>
+            <td>{{ q.get("n_avg") | num(2) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      {% endif %}
+      {% set scoreboard = chapter.get("scoreboard") or {} %}
+      {% if scoreboard.get("rows") %}
+      <h3>Signal scoreboard</h3>
+      <table>
+        <thead><tr><th>Signal</th><th>Mean rank IC</th><th>Hit rate</th><th>Significant</th><th style="text-align:left;">Methodology</th></tr></thead>
+        <tbody>
+        {% for row in scoreboard["rows"] %}
+          <tr>
+            <td>{{ row.get("signal_id", "—") }}</td>
+            <td>{{ row.get("mean_rank_ic") | num(4) }}</td>
+            <td>{{ row.get("hit_rate") | pct(1, false, 100) }}</td>
+            <td>{{ "yes" if row.get("significant") else "no" }}</td>
+            <td style="text-align:left;">{{ row.get("methodology", "—") }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      {# scoreboard.warnings must be visible independent of whether any rows graded this
+         week (fix round 4, SEV1) — a methodology caveat is still true with zero rows. #}
+      {% for w in (scoreboard.get("warnings") or []) %}<p class="how-to-read">{{ w }}</p>{% endfor %}
+
+      {{ plain_terms_box(plain_terms_quant) }}
+
+    {% elif key == "shadow" %}
+      <p class="evidence-note">{{ chapter.get("nature", "descriptive, evidence-only — never a proposal") }}</p>
+      <div class="kv-list">
+        <div class="kv"><span class="k">k (tool×metric shown)</span><span>{{ chapter.get("k", "—") }}</span></div>
+        <div class="kv"><span class="k">Grade-min weeks</span><span>{{ chapter.get("grade_min_weeks", "—") }}</span></div>
+      </div>
+      {% if chapter.get("deflation_note") %}<p class="how-to-read">{{ chapter["deflation_note"] }}</p>{% endif %}
+      {% if chapter.get("tools") %}
+      {% set priced = chapter.get("priced_as_of") %}
+      <p class="caption">SCOREBOARD{% if priced %} — priced as of {{ (priced[:19].replace("T", " ")) if priced|length >= 19 else priced }}{% endif %}</p>
+      <table>
+        <thead><tr><th>Tool</th><th>N events</th><th>N graded</th><th>Effective N</th><th>Pushes</th><th>Hit rate</th><th>Benchmark</th><th>Wilson LB</th><th>Graded</th></tr></thead>
+        <tbody>
+        {% for tool_name, t in chapter["tools"].items() %}
+          <tr>
+            <td>{{ tool_name }}</td>
+            <td>{{ t.get("n_events", "—") }}</td>
+            <td>{{ t.get("n_graded", "—") }}</td>
+            <td>{{ t.get("effective_n") | num(0) }}</td>
+            <td>{{ t.get("pushes") | num(0) }}</td>
+            <td>{{ t.get("hit_rate") | pct(1, false, 100) if t.get("hit_rate") is not none else "ungraded" }}</td>
+            <td>{{ t.get("benchmark_hit_rate") | pct(1, false, 100) }}</td>
+            <td>{{ t.get("hit_rate_wilson_lb") | num(2) }}</td>
+            <td>{{ "yes" if t.get("graded") else "no" }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {# Fix round 7: `Graded` used to print the
+         per-tool ungraded REASON in place of "no" — a real reason (e.g.
+         "horizon exceeds grading window") is prose, not a yes/no value, and
+         widened that one cell enough to wrap all 9 column headers. The
+         column stays strictly yes/no; any ungraded reasons move to one
+         footnote line under the table instead of living inside the grid. #}
+      {% set ns = namespace(ungraded=[]) %}
+      {% for tool_name, t in chapter["tools"].items() %}
+        {% if not t.get("graded") and t.get("reason") %}
+          {% set ns.ungraded = ns.ungraded + [tool_name ~ " — " ~ t.get("reason")] %}
+        {% endif %}
+      {% endfor %}
+      {% if ns.ungraded %}<p class="caption">Not graded: {{ ns.ungraded | join("; ") }}.</p>{% endif %}
+      {# P1.8: per-tool low_confidence/warnings prose used to
+         repeat near-verbatim across every graded tool (16-18 near-identical
+         lines when the whole book shares one "too little history" state) —
+         `shadow_warnings` (built in report_pdf.py) collapses that into ONE
+         banner covering the shared majority, plus real per-tool exceptions
+         only. `effective_n`/`pushes` moved to scoreboard columns above, so
+         they're no longer prose at all. #}
+      {% if shadow_warnings.banner %}<p class="how-to-read">{{ shadow_warnings.banner }}</p>{% endif %}
+      {% for exc in shadow_warnings.exceptions %}<p class="how-to-read">{{ exc.tool }} — {{ exc.text }}</p>{% endfor %}
+      {% endif %}
+
+      {{ plain_terms_box(plain_terms_shadow) }}
+
+    {% elif key == "forecasts" %}
+      {# additive chapter — the ledger's issuance summary for
+         this week. `decisions` is a separate, DELIBERATELY unrendered
+         chapter — see `_CHAPTER_ORDER` in report_pdf.py. #}
+      <div class="kv-list">
+        <div class="kv"><span class="k">Issued</span><span>{{ chapter.get("issued") | num(0) }}</span></div>
+        <div class="kv"><span class="k">Duplicates</span><span>{{ chapter.get("duplicates") | num(0) }}</span></div>
+        <div class="kv"><span class="k">Pending total</span><span>{{ chapter.get("pending_total") | num(0) }}</span></div>
+        <div class="kv"><span class="k">Next due</span><span>{{ chapter.get("next_due") or "—" }}</span></div>
+      </div>
+      {% set skipped = chapter.get("skipped") or {} %}
+      {% if skipped %}
+      <p class="caption">Skipped this week — already covered: {{ skipped.get("covered", 0) }}, ungradeable (no direction): {{ skipped.get("ungradeable", 0) }}.</p>
+      {% endif %}
+      {% set issuance_errors = chapter.get("issuance_errors") or [] %}
+      {% if issuance_errors %}
+      <p class="how-to-read">Issuance errors this week:</p>
+      <ul>
+      {% for e in issuance_errors %}<li>{{ e.get("issued_by", "—") }} / {{ e.get("subject", "—") }} — {{ e.get("reason", "—") }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+
+      {{ plain_terms_box(plain_terms_forecasts) }}
+
+    {% elif key == "calibration" %}
+      {% if calibration_groups %}
+      {% for g in calibration_groups %}
+      {% set priced = g.priced_as_of %}
+      <h3>{{ g.issuer_label }} <span class="muted">· {{ g.horizon_days }}d horizon{% if priced %} · priced as of {{ (priced[:19].replace("T", " ")) if priced|length >= 19 else priced }}{% endif %}</span></h3>
+      {% if g.pending %}<p class="caption">{{ g.pending }} forecast(s) still pending resolution.</p>{% endif %}
+      {% if g.low_confidence %}<p class="how-to-read">Low confidence — fewer effective observations than the track-record floor; treat as unproven.</p>{% endif %}
+      {% if g.deflation_note %}<p class="how-to-read">{{ g.deflation_note }}</p>{% endif %}
+      <div class="stat-group">
+        {% for r in g.stat_rows %}<div class="stat-row"><span class="k">{{ r.label }}</span><span>{{ r.value }}</span></div>{% endfor %}
+      </div>
+      {% if g.stats_omitted %}<p class="caption">{{ g.stats_omitted | length }} stat(s) omitted — no value yet ({{ g.stats_omitted | join(", ") }}).</p>{% endif %}
+      {% if g.bins %}
+      <table>
+        <thead><tr><th>Bin</th><th>N</th><th>Mean p</th><th>Hit rate</th><th>Wilson LB</th></tr></thead>
+        <tbody>
+        {% for b in g.bins %}
+          <tr{% if b.empty %} class="bin-empty"{% endif %}>
+            <td>{{ b.bin }}{% if b.empty %} <span class="micro">(n=0)</span>{% endif %}</td><td>{{ b.n }}</td><td>{{ b.mean_p }}</td><td>{{ b.hit_rate }}</td><td>{{ b.wilson_lb }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% elif g.bins_note %}
+      <p class="how-to-read">{{ g.bins_note }}</p>
+      {% endif %}
+      {% endfor %}
+      {% else %}
+      <p class="muted">No issuer groups to grade yet.</p>
+      {% endif %}
+
+      {{ plain_terms_box(plain_terms_calibration) }}
+
+    {% elif key == "methodology" %}
+      {% if chapter.get("version") %}<p class="caption">Version: {{ chapter["version"] }}</p>{% endif %}
+      {% for tool in chapter.get("tools", []) %}
+      <div class="methodology-tool">
+        <div class="name">{{ tool.get("tool", "—") }}</div>
+        <div class="kv-list">
+          <div class="kv"><span class="k">Measures</span><span>{{ tool.get("measures", "—") }}</span></div>
+          <div class="kv"><span class="k">Endpoint</span><span>{{ tool.get("endpoint", "—") }}</span></div>
+          <div class="kv"><span class="k">Limitations</span><span>{{ tool.get("limitations", "—") }}</span></div>
+          <div class="kv"><span class="k">Grading horizon</span><span>{{ tool.get("grading_horizon", "—") }}</span></div>
+        </div>
+      </div>
+      {% endfor %}
+      {% if methodology_conventions %}
+      <h3>Conventions</h3>
+      <div class="conventions">
+        {% for line in methodology_conventions %}<p>{{ line }}</p>{% endfor %}
+      </div>
+      {% endif %}
+
+    {% else %}
+      {# Any future chapter with no bespoke case above — never a raw dump
+         (rule 10): one muted count line, no keys/values printed. #}
+      {% set leftover = [] %}
+      {% for k in chapter.keys() %}{% if k not in ["engine", "how_to_read", "absent", "reason"] %}{% set _ = leftover.append(k) %}{% endif %}{% endfor %}
+      {% if leftover %}<p class="muted">{{ leftover | length }} field(s) recorded — available in the terminal.</p>{% endif %}
+    {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+{% endfor %}
+
+{% if render_warnings %}
+<section class="chapter" id="chapter-render-warnings">
+  <h2>Render Warnings</h2>
+  <p class="how-to-read">The following section field(s) were present but wrong-shaped
+    this week and were rendered as missing rather than failing the whole report:</p>
+  <ul>
+  {% for w in render_warnings %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<script id="report-chart-data" type="application/json">{{ chart_data_json }}</script>
+<script>{{ charts_js }}</script>
+</body>
+</html>

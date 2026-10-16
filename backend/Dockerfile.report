@@ -1,0 +1,20 @@
+# Report-worker image: backend app code + Playwright/Chromium
+# (weekly PDF render). Kept separate
+# from the daily backend image (Dockerfile) so Chromium/Node never bloat the API image.
+# Same ./backend source, so it imports app.services / app.adapters unchanged.
+FROM python:3.12-slim
+
+WORKDIR /app
+# Deps via pyproject (mirrors the main backend Dockerfile — no requirements.txt in this
+# repo); playwright is deliberately NOT a pyproject dependency (the main API image must
+# never pull it in) — it's installed here, in the report image, only.
+COPY pyproject.toml ./
+COPY app ./app
+RUN pip install --no-cache-dir . playwright \
+    && playwright install --with-deps chromium
+COPY alembic.ini ./
+COPY alembic ./alembic
+COPY . .
+
+# Off-API worker: no HTTP, no host port. Runs app.report_worker.
+CMD ["python", "-m", "app.report_worker"]

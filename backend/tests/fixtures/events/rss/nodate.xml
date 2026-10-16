@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>No Date</title>
+    <item>
+      <title>Undated Alpha Bravo Charlie</title>
+      <link>https://example.test/nodate</link>
+      <guid>g-nodate</guid>
+      <description>none</description>
+    </item>
+  </channel>
+</rss>

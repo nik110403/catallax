@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>{{ note.title }}</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: 'Liberation Serif', Georgia, serif; font-size: 13px; line-height: 1.5; color: #1a1a1a; margin: 0; }
+.cover { min-height: 235mm; page-break-after: always; display: flex; flex-direction: column; }
+.eyebrow { text-transform: uppercase; letter-spacing: .18em; color: #666; font-size: 11px; padding-top: 6mm; }
+h1 { font-size: 32px; font-weight: 600; margin: 24mm 0 8mm; }
+.kind { border-top: 1.5px solid #1b3a5c; padding-top: 10px; color: #555; text-transform: uppercase; }
+.stamp { margin-top: auto; border-left: 3px solid #c98a3a; padding: 10px; color: #555; }
+h2 { font-size: 18px; color: #1b3a5c; border-bottom: 1.5px solid #1b3a5c; padding-bottom: 4px; break-after: avoid; }
+section { margin-bottom: 18px; } p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.evidence { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.evidence th, .evidence td { border-bottom: 1px solid #ddd; padding: 6px 8px 6px 0; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }
+.evidence th { color: #666; font-size: 11px; }
+.evidence th:nth-child(1) { width: 20%; }
+.evidence th:nth-child(2) { width: 35%; }
+.muted { color: #666; font-size: 11px; }
+</style></head><body>
+<div class="cover"><div class="eyebrow">Catallax / Research archive</div>
+<h1>{{ note.title }}</h1><div class="kind">{{ note.kind | replace('_', ' ') }} · {{ note.status }}</div>
+{% if redacted %}<div class="stamp">REDACTED EXPORT{% if note.scan_counts %} · {% for rule, count in note.scan_counts | dictsort %}{{ rule }}: {{ count }}{% if not loop.last %} · {% endif %}{% endfor %}{% endif %}</div>{% endif %}
+</div>
+{% for label, key in [('One sentence', 'one_sentence'), ('Why it matters', 'why_it_matters'), ('Action', 'action'), ('Risk / invalidation', 'risk_invalidation'), ('Body', 'body')] %}
+{% if note[key] %}<section><h2>{{ label }}</h2><p>{{ note[key] }}</p></section>{% endif %}
+{% endfor %}
+{% if note.evidence %}<section><h2>Evidence</h2>
+<table class="evidence"><thead><tr><th scope="col">Kind</th><th scope="col">ID</th><th scope="col">Label</th></tr></thead><tbody>
+{% for ref in note.evidence %}<tr><td>{{ ref.kind }}</td><td>{{ ref.id }}</td><td>{{ ref.label or '' }}</td></tr>{% endfor %}
+</tbody></table>
+</section>{% endif %}
+</body></html>

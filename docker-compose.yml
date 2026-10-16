@@ -1,0 +1,323 @@
+name: catallax-public
+
+services:
+  # ──────────────────────────────────────────────────────────
+  # Reverse proxy — single entry point for the whole stack
+  # ──────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      # Bind address defaults to loopback (local-only). The app has no login by
+      # default; only widen NGINX_BIND_ADDR on a network you trust.
+      - "${NGINX_BIND_ADDR:-127.0.0.1}:${NGINX_HOST_PORT:-8090}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro,z
+    depends_on:
+      fastapi-backend:
+        condition: service_healthy
+      react-frontend:
+        condition: service_started
+      fava:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # FastAPI backend — only gateway to Fava / data
+  # ──────────────────────────────────────────────────────────
+  notes-mount-init:
+    image: busybox:1.37
+    command: ["mkdir", "-p", "/data/reports/notes"]
+    volumes:
+      # Docker cannot create a nested mountpoint beneath an already read-only
+      # parent; create the empty mountpoint in the archive volume first.
+      - report_pdfs:/data/reports:rw
+
+  fastapi-backend:
+    build:
+      context: ./backend
+    env_file: .env
+    volumes:
+      # Read-only sample ledger: backend stats BEANCOUNT_FILE mtime for ledger
+      # cache invalidation (queries still go through Fava's API, never the file).
+      - ./data/sample.beancount:/data/ledger/main.bean:ro
+      # Read-only PDF archive: report-worker writes here, the
+      # `/api/v1/reports/.../pdf` route serves from it, never writes.
+      - report_pdfs:/data/reports:ro
+      # Writable child mount for note exports; the report archive stays read-only.
+      - note_pdfs:/data/reports/notes:rw
+    depends_on:
+      notes-mount-init:
+        condition: service_completed_successfully
+      stub-exporter:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # default = postgres/redis/fava/nginx; macro-net = the openbb-data sidecar
+    # (so only the backend can reach it — the frontend container cannot).
+    networks: [default, macro-net]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Stub exporter: serves the demo persona's net worth / holdings in the
+  # wire format the backend's portfolio bridge expects. Same image as the
+  # backend; internal network only, no published port.
+  # ──────────────────────────────────────────────────────────
+  stub-exporter:
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.stub_exporter:app", "--host", "0.0.0.0", "--port", "8089"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8089/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # React frontend — nginx-served production build
+  # ──────────────────────────────────────────────────────────
+  react-frontend:
+    build:
+      context: ./frontend
+    env_file: .env
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # PostgreSQL — app database
+  # ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    env_file: .env
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Redis — cache, rate limiting, pub/sub
+  # ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    env_file: .env
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Fava — Beancount web UI + JSON API, serves BEANCOUNT_FILE
+  # ──────────────────────────────────────────────────────────
+  fava:
+    image: yegle/fava:v1.30
+    # Ledger path comes from BEANCOUNT_FILE (fava reads the env var natively).
+    # --poll-watcher: the default inotify watcher does not receive file events
+    # across a Docker bind mount, so ledger edits would go unseen. Polling
+    # re-stats mtimes and reloads.
+    # Port 5001 (bridge-internal only, not published); FAVA_BASE_URL matches.
+    command: ["--host", "0.0.0.0", "--port", "5001", "--prefix", "/fava", "--poll-watcher"]
+    env_file: .env
+    volumes:
+      - ./data/sample.beancount:/data/ledger/main.bean:ro
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Report worker: self-contained weekly analyst pack. In-process factor
+  # study + intel enrichment + PDF render in one off-API job loop
+  # (`python -m app.report_worker`, no HTTP, no host port). Separate heavy
+  # image (`Dockerfile.report` = backend code + Playwright/Chromium) so those
+  # deps never bloat the daily backend image. LLM_PROVIDER is pinned to noop:
+  # packs render without narration (visibly marked), never failing the job.
+  # ──────────────────────────────────────────────────────────
+  report-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.report
+    environment:
+      - LLM_PROVIDER=noop
+    command: ["python", "-m", "app.report_worker"]
+    env_file: .env
+    shm_size: 512m  # Chromium (Playwright PDF render) needs real /dev/shm
+    volumes:
+      - report_pdfs:/data/reports:rw
+    # default = postgres/redis/stub-exporter; macro-net = the openbb-data
+    # sidecar (the pack's market_research chapter calls MacroAdapter in-process).
+    # The network is declared at top level, so it exists even when the `macro`
+    # profile is off (MacroAdapter then degrades cleanly, as in the backend).
+    networks: [default, macro-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      stub-exporter:
+        condition: service_healthy
+      # The worker overrides the image CMD (no `alembic upgrade`), so wait for
+      # the backend to be healthy: migrations applied, report tables exist.
+      fastapi-backend:
+        condition: service_healthy
+    healthcheck:
+      # The worker touches /tmp/report-worker-heartbeat every tick; "healthy"
+      # means a heartbeat younger than 3x the tick interval (stale = stuck).
+      test: ["CMD-SHELL", "test -f /tmp/report-worker-heartbeat && [ $(( $(date +%s) - $(stat -c %Y /tmp/report-worker-heartbeat) )) -lt $(( ${REPORT_PACK_TICK_INTERVAL_SECONDS:-300} * 3 )) ]"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # OpenBB Platform REST API — macro/econ data sidecar (Phase 8,
+  # integration Path B). Heavy + opt-in: only starts under the
+  # `macro` profile. Internal network only (no host port); the
+  # backend reaches it over HTTP via MacroAdapter. Free providers
+  # only (federal_reserve / ecb / econdb keyless; FRED via a free
+  # key). No hard depends_on: the default stack runs without it,
+  # and MacroAdapter degrades cleanly when it's down.
+  #   Enable with: docker compose --profile macro up -d
+  # ──────────────────────────────────────────────────────────
+  openbb-data:
+    profiles: ["macro"]
+    build:
+      context: ./openbb-data
+    environment:
+      OPENBB_FRED_API_KEY: ${OPENBB_FRED_API_KEY:-}
+      OPENBB_API_PORT: "6900"
+    # Isolated onto macro-net only — reachable by the backend + report-worker,
+    # not the frontend.
+    # (Non-internal bridge so it keeps egress to the free upstream providers.)
+    networks: [macro-net]
+    healthcheck:
+      # Cheap local check (FastAPI's own OpenAPI schema) — no upstream call.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:6900/openapi.json')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Backtester worker (Phase 9, engine). Same ./backend image as
+  # fastapi-backend (numpy/pandas already present) but runs the
+  # OFF-API job loop `python -m app.worker` instead of the API —
+  # so a backtest never blocks the main API. Jobs flow in via the
+  # Redis queue, results out via the `backtests` table; no HTTP,
+  # no host port. Heavy + opt-in: only starts under the `backtest`
+  # profile (the default stack stays focused).
+  #   Enable with: docker compose --profile backtest up -d
+  # ──────────────────────────────────────────────────────────
+  backtester:
+    profiles: ["backtest"]
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    volumes:
+      # Same read-only ledger mount as the backend (shared image expects it).
+      - ./data/sample.beancount:/data/ledger/main.bean:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # The worker overrides the image CMD (no `alembic upgrade`), so wait for the
+      # backend to be healthy — it has applied the migrations + the schema exists.
+      fastapi-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Quant/ML Lab worker. A SEPARATE, HEAVY image
+  # (Dockerfile.lab = backend code + torch/xgboost/qlib) so the
+  # ML deps never bloat the daily backend. Runs the OFF-API job
+  # loop `python -m app.lab_worker` (no HTTP, no host port) on the
+  # default network so it reaches Postgres + Redis. Factor/model
+  # jobs flow in via the Redis queue, results out via the
+  # `lab_runs` table; the worker is READ-ONLY on F0 daily_bars.
+  # Heavy + opt-in: only starts under the `lab` profile.
+  #   Enable with: docker compose --profile lab up -d
+  # ──────────────────────────────────────────────────────────
+  qlib-lab:
+    profiles: ["lab"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.lab
+    env_file: .env
+    volumes:
+      # Same read-only ledger mount as the backend (shared image expects it).
+      - ./data/sample.beancount:/data/ledger/main.bean:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # The worker overrides the image CMD (no `alembic upgrade`), so wait for the
+      # backend to be healthy — it has applied the migrations + the schema exists.
+      fastapi-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Algo paper-trading engine — the continuous tick loop
+  # `python -m app.algo_worker`: resolves orders, sweeps resting limits,
+  # snapshots the account, runs due strategy rebalances. Single-worker
+  # assumption (see `AlgoService` module docstring) — do not scale replicas.
+  # Opt-in via --profile algo; the daily stack runs without it.
+  trading-engine:
+    profiles: ["algo"]
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.algo_worker"]
+    env_file: .env
+    environment:
+      - ALGO_BROKER=${ALGO_BROKER:-paper}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # The worker overrides the image CMD (no `alembic upgrade`), so wait for the
+      # backend to be healthy — it has applied the migrations + the schema exists.
+      fastapi-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  report_pdfs:
+  note_pdfs:
+
+networks:
+  # Default app network (postgres/redis/fava/nginx/frontend/backend).
+  default:
+  # Backend + report-worker <-> openbb-data only (never the frontend). Not
+  # `internal`: openbb-data needs egress to the free upstream providers.
+  macro-net:

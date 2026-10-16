@@ -1,0 +1,1170 @@
+/* Catallax dashboard — dark, Bloomberg-density theme tokens + chrome. */
+:root {
+  /* Canonical token source lives in theme.ts; these mirror it 1:1 (drift-guarded
+     by scripts/check-tokens.mjs). Chart libs read theme.ts; CSS chrome reads these. */
+  color-scheme: dark;
+  --bg: #0d1117;
+  --panel: #11161d;
+  --panel-header: #161b22;
+  --border: #21262d;
+  --text: #e6edf3;
+  --muted: #838b96; /* F4 2026-08-15: raised from #7d8590 — 4.34:1 vs --grid failed the 4.5:1 bar */
+  --accent: #f0883e;
+  --up: #3fb950;
+  --down: #f85149;
+  --warn: #d29922; /* amber — caution / mid-range */
+  --grid: #1c2128;
+
+  /* Categorical chart palette (multi-series charts draw from these in order). */
+  --chart-1: #58a6ff;
+  --chart-2: #f0883e;
+  --chart-3: #3fb950;
+  --chart-4: #db61a2;
+  --chart-5: #a371f7;
+  --chart-6: #e3b341;
+  --chart-7: #56d4dd;
+  --chart-8: #f85149;
+
+  /* Type scale — 11px is the legibility floor. */
+  --fs-micro: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 20px;
+
+  --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
+  /* Prose/reading layer only; numerals stay mono tabular. */
+  --font-serif: Georgia, "Times New Roman", serif;
+}
+
+/* Global keyboard-focus ring (Phase 14c a11y). Every interactive element gets a
+   visible accent ring on keyboard traversal; :focus-visible already excludes
+   mouse-driven focus in modern browsers, so pointer users see no change. */
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* fix-first #10: `body`'s `font-family: var(--font-mono)` above does
+   NOT inherit into form controls — browsers give `button`/`input`/`select`/
+   `textarea` their own platform UI-font default (Arial/Helvetica on most
+   desktop stacks), so every widget button was quietly rendering off-system
+   despite every widget's own inline styles never touching font-family. */
+:where(button, input, select, textarea) {
+  font: inherit;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Always-visible thin scrollbars — a terminal needs a static "more content"
+   cue (auto-hiding scrollbars read as clipped content). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+}
+
+.tabnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── App chrome ─────────────────────────────────────────── */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.app-title {
+  letter-spacing: 0.32em;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: var(--fs-lg);
+}
+.app-health {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.app-greeting {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.app-spacer {
+  flex: 1;
+}
+
+.app-actions button {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.app-actions button:hover {
+  border-color: var(--accent);
+}
+
+/* ── Marquee ticker ─────────────────────────────────────── */
+.marquee {
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.marquee-track {
+  display: inline-flex;
+  will-change: transform;
+  animation-name: marquee-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.marquee-copy {
+  display: inline-flex;
+}
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+@keyframes marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    /* Set per-render from the copy count (TickerBar.tsx) — -50% is only the
+       fallback for a list wide enough to be rendered as exactly 2 copies. */
+    transform: translateX(var(--marquee-shift, -50%));
+  }
+}
+/* Respect reduced-motion: stop scrolling, allow manual horizontal scroll. */
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .marquee-track {
+    animation: none;
+  }
+  .marquee-copy[aria-hidden] {
+    display: none;
+  }
+}
+.ticker-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 14px;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ticker-sym {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+.ticker-px {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ticker-up {
+  color: var(--up);
+}
+.ticker-down {
+  color: var(--down);
+}
+.ticker-err {
+  /* missing data, not a price drop → muted, reserve red for real downticks */
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Fixed dock at the marquee's right edge (Phase 14e) — sits over the
+   scrolling track, opaque, so the EDIT trigger is always reachable and never
+   itself scrolls off. */
+.marquee-edit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+}
+
+/* ── Ticker watchlist editor (Phase 14e) ───────────────────
+   Anchored popover, portalled to <body> so the marquee's overflow:hidden
+   can't clip it (same reasoning as .help-pop above) — not a modal: no
+   backdrop, no focus trap, closes on Escape or an outside click. */
+.ticker-editor {
+  position: fixed;
+  z-index: 1000;
+  width: min(420px, 92vw);
+  max-height: 70vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+.ticker-editor-title {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ticker-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 40vh;
+  overflow: auto;
+}
+.ticker-editor-empty {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  padding: 4px 0;
+}
+.ticker-editor-row,
+.ticker-editor-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ticker-editor-row input[type="text"],
+.ticker-editor-add input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ticker-editor input,
+.ticker-editor select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 4px 6px;
+}
+.ticker-editor input:focus,
+.ticker-editor select:focus {
+  border-color: var(--accent);
+}
+.ticker-editor input:focus:not(:focus-visible),
+.ticker-editor select:focus:not(:focus-visible) {
+  outline: none;
+}
+.ticker-editor-add {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.ticker-editor-error {
+  font-size: var(--fs-micro);
+  color: var(--down);
+}
+.ticker-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.ticker-editor-btn {
+  background: var(--panel-header);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.ticker-editor-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.ticker-editor-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Grid + panels ──────────────────────────────────────── */
+.grid-wrap {
+  flex: 1;
+  overflow: auto;
+  /* Bottom gutter so the last grid row clears the viewport edge when a tab's
+     panels overflow and the page scrolls. */
+  padding: 4px 4px 20px;
+}
+.layout-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+}
+.layout-bar-label {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+/* Shared chrome for the layout-bar select + buttons (token-driven, replaces the
+   old inline style objects). */
+.layout-bar button,
+.layout-bar select,
+.layout-bar input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 3px 6px;
+}
+.layout-bar select,
+.layout-bar input {
+  color: var(--text);
+}
+.layout-bar button {
+  color: var(--muted);
+  cursor: pointer;
+}
+.layout-bar input {
+  width: 140px;
+}
+.layout-bar button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.layout-bar button:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  opacity: 0.5;
+}
+.layout-bar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 4px;
+  background: var(--border);
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--panel-header);
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+  flex: 0 0 auto;
+}
+.panel-title {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.panel-header .spacer {
+  flex: 1;
+}
+.panel-help {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: help;
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  padding: 0 2px;
+}
+.panel-help:hover,
+.panel-help:focus-visible {
+  color: var(--accent);
+}
+/* Portalled to <body> at a fixed position (computed from the button) so the
+   panel's overflow:hidden can't clip it. Non-interactive: a pure hover/focus
+   explainer, so moving the cursor off the button closes it (no hover gap). */
+.help-pop {
+  position: fixed;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  background: var(--panel-header);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-family: var(--font-serif);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  white-space: pre-line;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  z-index: 1200;
+  pointer-events: none;
+}
+.panel-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 4px;
+}
+.panel-close:hover {
+  color: var(--down);
+}
+.panel-body {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.panel-state {
+  padding: 10px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.panel-state.error {
+  color: var(--down);
+}
+
+/* ── Lists / tables ─────────────────────────────────────── */
+.kv {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.kv .k {
+  color: var(--muted);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* news */
+.news-item {
+  display: block;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+.news-item:hover {
+  background: var(--panel-header);
+}
+.news-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.news-src {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+
+/* account tree */
+.acct-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1px 8px;
+}
+.acct-name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-row.root .acct-name {
+  font-weight: 600;
+}
+.acct-row:not(.root) .acct-name {
+  color: var(--muted);
+}
+.acct-bal {
+  display: inline-flex;
+  gap: 12px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Geo map ──────────────────────────────────── */
+.geo-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  background: rgba(13, 17, 23, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  z-index: 2;
+}
+.geo-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-micro);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.geo-toggle input {
+  margin: 0;
+  cursor: pointer;
+  /* Neutral tick — the colour swatch already identifies the layer; the checkbox
+     only needs to signal on/off. */
+  accent-color: var(--text);
+}
+.geo-popup {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: #11161d;
+  line-height: 1.4;
+}
+/* MapLibre popup chrome → match the dark terminal */
+.maplibregl-popup-content {
+  background: #e6edf3;
+  border-radius: 4px;
+  padding: 6px 9px;
+}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: #e6edf3;
+}
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: #e6edf3;
+}
+.maplibregl-ctrl-attrib {
+  font-size: var(--fs-micro);
+}
+/* Inset the zoom control so it floats inside the map, not against the panel chrome. */
+.maplibregl-ctrl-top-right {
+  margin: 6px 6px 0 0;
+}
+
+/* ── Workspace + tab controls ──────────────────────── */
+.icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border);
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Section nav + sub-nav (Phase 14d) ──────────────────── */
+.section-nav {
+  display: flex;
+  gap: 2px;
+}
+.section {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  letter-spacing: 0.06em;
+  padding: 3px 14px;
+  cursor: pointer;
+}
+.section:hover {
+  color: var(--text);
+}
+.section.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.subnav {
+  display: flex;
+  gap: 2px;
+  padding: 3px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.subtab {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  padding: 2px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.subtab:hover {
+  color: var(--text);
+}
+.subtab.active {
+  color: var(--accent);
+  background: var(--panel-header);
+}
+
+.palette-hint {
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 2px 7px;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+}
+.palette-hint:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ── Command palette ───────────────────────────────── */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  z-index: 1000;
+}
+.palette {
+  width: min(620px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.palette-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--panel-header);
+  color: var(--text);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font: inherit;
+  font-size: var(--fs-base);
+  padding: 11px 14px;
+}
+.palette-input:focus:not(:focus-visible) {
+  outline: none;
+}
+.palette-input::placeholder {
+  color: var(--muted);
+}
+.palette-list {
+  max-height: 46vh;
+  overflow: auto;
+}
+.palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+.palette-item.active {
+  /* Clear, no-layout-shift selection cue: brighter row + an accent left bar. */
+  background: var(--border);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.palette-item.active .palette-label {
+  color: var(--text);
+}
+.palette-label {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-code {
+  flex: 0 0 auto;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.palette-empty {
+  padding: 14px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.palette-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-header);
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+}
+.palette-legend-item {
+  white-space: nowrap;
+}
+.palette-legend-key {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  margin-right: 4px;
+}
+
+/* Brief highlight when the palette scrolls a widget into view. */
+.panel-flash {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* ── Widget catalog ────────────────────────────────── */
+.catalog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 8vh;
+  z-index: 1000;
+}
+.catalog {
+  width: min(760px, 94vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.catalog-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--panel-header);
+  border-bottom: 1px solid var(--border);
+}
+.catalog-title {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.catalog-search {
+  flex: 1;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 5px 9px;
+}
+.catalog-search:focus:not(:focus-visible) {
+  outline: none;
+}
+.catalog-body {
+  overflow: auto;
+  padding: 10px 12px;
+}
+.catalog-group {
+  margin-bottom: 12px;
+}
+.catalog-group-label {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 2px 0 6px;
+}
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 7px;
+}
+.catalog-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  background: var(--panel-header);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.catalog-card:hover {
+  border-color: var(--accent);
+}
+.catalog-card-title {
+  font-size: var(--fs-sm);
+}
+.catalog-card-desc {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  /* Two-line clamp so the blurb stays readable at the 170px card width. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
+}
+.catalog-card-size {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Login (Phase 14a, share gate) ──────────────────────── */
+.login-screen {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.login-card {
+  width: min(340px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 28px 26px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+.login-wordmark {
+  margin: 0;
+  text-align: center;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  color: var(--accent);
+}
+.login-tagline {
+  text-align: center;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  margin-top: 4px;
+}
+.login-label {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.login-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-base);
+  padding: 8px 10px;
+}
+.login-input:focus {
+  border-color: var(--accent);
+}
+.login-input:focus:not(:focus-visible) {
+  outline: none;
+}
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-micro);
+  color: var(--text);
+  cursor: pointer;
+}
+.login-remember input {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.login-remember input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.login-error {
+  font-size: var(--fs-micro);
+  color: var(--down);
+}
+.login-submit {
+  background: var(--panel-header);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 9px;
+  cursor: pointer;
+}
+.login-submit:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg);
+}
+.login-submit:disabled {
+  /* F5 2026-08-15: `opacity: 0.5` dimmed both the accent text AND its own
+     background toward the card behind it, collapsing text-vs-background
+     contrast to ~2.6:1 on the very first screen (measured: rgb(129,79,45) on
+     rgb(19,24,31)). Swap to the muted token instead — still visibly inactive,
+     but the text keeps its own real contrast against the unchanged panel-header
+     background (measured after: see report). */
+  color: var(--muted);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+.login-submit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Home tab (Phase 14b) ───────────────────────────────── */
+.home-nav-btn {
+  background: var(--panel-header);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.home-nav-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+.home-nav-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── react-grid-layout look ─────────────────────────────── */
+.react-grid-item.react-grid-placeholder {
+  background: var(--accent);
+  opacity: 0.15;
+  border-radius: 5px;
+}
+.react-grid-item > .react-resizable-handle::after {
+  border-right-color: var(--muted);
+  border-bottom-color: var(--muted);
+}
+
+/* ── Orientation overlay (Phase 14f, first-visit only) ──── */
+.orientation-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1300;
+}
+.orientation-card {
+  width: min(640px, 94vw);
+  /* Content is sized to fit a 1080p viewport with no scroll; max-height/overflow
+     are only a safety net for unexpectedly short viewports. */
+  max-height: 90vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 26px 30px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+.orientation-eyebrow {
+  display: block;
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  color: var(--accent);
+}
+.orientation-lede {
+  margin: 6px 0 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+.orientation-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.orientation-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.orientation-section-name {
+  flex: 0 0 96px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--accent);
+}
+.orientation-section-desc {
+  flex: 1;
+  font-family: var(--font-serif);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  line-height: 1.4;
+}
+.orientation-note {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  line-height: 1.4;
+}
+.orientation-hint {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.orientation-dismiss {
+  align-self: center;
+  width: min(220px, 100%);
+  background: var(--panel-header);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 9px;
+  cursor: pointer;
+}
+.orientation-dismiss:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+.orientation-dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Small-viewport notice (Phase 14f) ───────────────────── */
+/* The dashboard grid is desktop-only by design — an honest notice, not a
+   responsive rebuild. .small-screen-notice is always
+   rendered (App.tsx); this media query is the ONLY thing that ever shows it
+   or hides .app, so it can never be wrong about a resize. Zero effect above
+   the breakpoint. */
+.small-screen-notice {
+  display: none;
+}
+@media (max-width: 899px) {
+  .app {
+    display: none;
+  }
+  .small-screen-notice {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 32px;
+    background: var(--bg);
+    color: var(--text);
+    text-align: center;
+    z-index: 1400;
+  }
+  .small-screen-title {
+    font-size: var(--fs-lg);
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .small-screen-body {
+    margin: 0;
+    max-width: 320px;
+    font-family: var(--font-serif);
+    font-size: var(--fs-base);
+    color: var(--muted);
+    line-height: 1.5;
+  }
+}

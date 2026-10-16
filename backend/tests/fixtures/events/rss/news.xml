@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Markets</title>
+    <item>
+      <title>Alpha Bravo Charlie</title>
+      <link>https://example.test/a</link>
+      <guid>g-a</guid>
+      <pubDate>Wed, 01 Oct 2025 12:00:00 GMT</pubDate>
+      <description>one</description>
+    </item>
+    <item>
+      <title>Delta Echo Foxtrot</title>
+      <link>https://example.test/b</link>
+      <guid>g-b</guid>
+      <pubDate>Wed, 01 Oct 2025 11:00:00 GMT</pubDate>
+      <description>two</description>
+    </item>
+  </channel>
+</rss>

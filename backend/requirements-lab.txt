@@ -1,0 +1,11 @@
+# Phase 11 — Quant/ML Lab heavy ML layer.
+# Installed ONLY in the `qlib-lab` image (docker compose --profile lab), NEVER in
+# the daily `fastapi-backend` image. These are the deps the off-API lab worker
+# (`python -m app.lab_worker`) needs beyond torch (installed separately in
+# Dockerfile.lab from the CPU wheel index) and the backend package's pandas/numpy:
+#   - the shipped `sklearn-ensemble` model engine (XGBoost + RandomForest)
+# The `deep-zoo` engine uses torch directly. pyqlib is intentionally NOT a dep —
+# see Dockerfile.lab for the rationale (its pins mutate the image for no runtime
+# gain; the full qlib-workflow path is deferred).
+scikit-learn>=1.4,<2
+xgboost>=2.0,<3
