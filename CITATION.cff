@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "catallax"
+abstract: "A self-hosted financial terminal for one person's money and the markets around it."
+authors:
+  - family-names: Khosravipour
+    given-names: Nik
+repository-code: "https://github.com/nik110403/catallax"
+url: "https://nikkhosravipour.com"
+license: MIT

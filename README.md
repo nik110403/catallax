@@ -1,6 +1,10 @@
-# Catallax
+<p><picture><source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg"><img src="assets/banner-light.svg" alt="catallax" width="100%"></picture></p>
 
-A self-hosted financial terminal for one person's money and the markets around it.
+**A self-hosted financial terminal for one person's money and the markets around it.**
+
+[Quick start](#quick-start) · [Architecture](#architecture) · [Design decisions](#design-decisions) · [Site](https://nikkhosravipour.com)
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-8c2f1b?style=flat)](LICENSE) [![Docs: CC BY 4.0](https://img.shields.io/badge/docs-CC%20BY%204.0-57534e?style=flat)](LICENSE-docs)
 
 > **Snapshot of a private project.** This repository is a frozen, public copy of a
 > terminal I run for my own finances. Personal data, private infrastructure and the
@@ -105,6 +109,14 @@ Catallax is a LAN-only, single-user app. It speaks plain HTTP and binds to `127.
 by default. `SHARE_PASSPHRASE` puts a login card in front of the API, but it does not
 replace TLS; see [SECURITY.md](SECURITY.md).
 
-## Licence
+## Design decisions
 
-[MIT](LICENSE).
+1. **Paper trading only.** No broker credentials, order routing or wallet signing exist, so no bug can move real money.
+2. **One bridge, two exporters.** The portfolio comes in over a small exporter protocol, so the stub here and the real exporter in the private deployment run the same bridge code.
+3. **Market data behind adapters.** Each source is one class and one registry line, with a local cache and a fallback price source, so adding or replacing a source touches one file.
+4. **Heavy parts behind profiles.** Macro data, backtesting, the quant lab and paper trading are opt-in containers, so the default stack starts without API keys or a large image.
+5. **LAN-only by default.** The stack binds to `127.0.0.1` and serves one user; exposing it is a deliberate step that needs TLS in front.
+
+## License
+
+Code: [MIT](LICENSE). Text and figures: [CC BY 4.0](LICENSE-docs). Cite via the "Cite this repository" button ([CITATION.cff](CITATION.cff)).

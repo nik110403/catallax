@@ -1,0 +1,10 @@
+Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+The text and figures in this repository (README.md, PRODUCT.md, DESIGN.md, SECURITY.md, the
+documents in skills/ and the banner images in assets/) are licensed under CC BY 4.0. Code is
+licensed separately under MIT (see LICENSE). The fonts in tools/banner/fonts/ are under the SIL
+Open Font License (see tools/banner/fonts/OFL.txt). Third-party data fetched at runtime is
+covered by neither licence.
+Full legal text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+Copyright (c) 2026 Nik Khosravipour
