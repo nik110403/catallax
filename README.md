@@ -2,7 +2,7 @@
 
 **A self-hosted financial terminal for one person's money and the markets around it.**
 
-[Quick start](#quick-start) · [Architecture](#architecture) · [Design decisions](#design-decisions) · [Case study](CASE-STUDY.md) · [Site](https://nikkhosravipour.com)
+[Live demo](https://catallax-demo.nikkhosravipour.com) · [Quick start](#quick-start) · [Architecture](#architecture) · [Design decisions](#design-decisions) · [Case study](CASE-STUDY.md) · [Site](https://nikkhosravipour.com)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-8c2f1b?style=flat)](LICENSE) [![Docs: CC BY 4.0](https://img.shields.io/badge/docs-CC%20BY%204.0-57534e?style=flat)](LICENSE-docs)
 
@@ -11,6 +11,11 @@
 > AI features have been removed; the portfolio you see is a synthetic persona served
 > by a stub exporter. I update it from the private project in batches, and each batch
 > goes through the same scrub and privacy scan before it lands here.
+
+**Live demo:** [catallax-demo.nikkhosravipour.com](https://catallax-demo.nikkhosravipour.com)
+runs this repository read-only on my homelab. It shows the synthetic persona and a few
+sample artifacts; writes are switched off, and market data is served from a cache that
+refreshes on a schedule, never fetched per visitor.
 
 Catallax puts net worth, holdings and a Beancount ledger into one dense, keyboard-driven
 dashboard, then surrounds them with the market context you would otherwise open six tabs
