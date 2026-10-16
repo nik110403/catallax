@@ -13,6 +13,7 @@ import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
 import { registerWidget } from "./registry";
 import { useAsync } from "./useAsync";
+import { InlineError } from "./InlineError";
 
 type Side = "buy" | "sell";
 type OrderType = "market" | "limit";
@@ -250,20 +251,7 @@ function OrderTicket() {
           </button>
         </form>
 
-        {err && (
-          <div
-            style={{
-              fontSize: theme.fontSize.micro,
-              color: theme.down,
-              background: "rgba(248,81,73,0.08)",
-              border: `1px solid ${theme.down}`,
-              borderRadius: 3,
-              padding: "4px 8px",
-            }}
-          >
-            {err}
-          </div>
-        )}
+        {err && <InlineError msg={err} />}
         {last && (
           <div
             style={{

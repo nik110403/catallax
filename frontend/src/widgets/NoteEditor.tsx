@@ -33,6 +33,7 @@ import { controlStyle } from "./chartTheme";
 import { PanelHead } from "./PanelHead";
 import { registerWidget } from "./registry";
 import { useAsync } from "./useAsync";
+import { InlineError } from "./InlineError";
 
 const NOTES_API = "/api/v1/notes";
 
@@ -662,11 +663,7 @@ function NoteEditor() {
             )}
           </div>
         )}
-        {saveErr && (
-          <div role="alert" style={{ fontSize: theme.fontSize.micro, color: theme.down, background: "rgba(248,81,73,0.08)", border: `1px solid ${theme.down}`, borderRadius: 3, padding: "4px 8px" }}>
-            {saveErr}
-          </div>
-        )}
+        {saveErr && <InlineError msg={saveErr} />}
       </div>
     </div>
   );

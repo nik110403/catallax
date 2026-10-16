@@ -113,8 +113,16 @@ export function isReadOnlyDemoError(e: unknown): boolean {
 // own body parsing is unaffected. Returns null for every other failure.
 export async function readOnlyDemoError(res: Response, method: string): Promise<ApiError | null> {
   if (method.toUpperCase() === "GET") return null;
-  let hit = res.status === 405;
-  if (!hit && res.status === 403) {
+  let hit = false;
+  if (res.status === 405) {
+    // The edge's bare 405 has no JSON body; FastAPI's own 405 is {"detail":…}
+    // and is a real routing error, not the demo.
+    try {
+      hit = (await res.clone().json())?.detail === undefined;
+    } catch {
+      hit = true;
+    }
+  } else if (res.status === 403) {
     try {
       hit = (await res.clone().json())?.error === READ_ONLY_DEMO_CODE;
     } catch {

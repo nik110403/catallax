@@ -301,10 +301,6 @@ body {
   border-top: 1px solid var(--border);
   padding-top: 8px;
 }
-.ticker-editor-error {
-  font-size: var(--fs-micro);
-  color: var(--down);
-}
 .ticker-editor-actions {
   display: flex;
   justify-content: flex-end;

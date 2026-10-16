@@ -15,6 +15,7 @@ import { PanelState } from "./PanelState";
 import { JobStatus } from "./JobStatus";
 import { registerWidget } from "./registry";
 import { useAsync } from "./useAsync";
+import { InlineError } from "./InlineError";
 
 const LazyReport = lazy(() => import("./BacktestReport").then((m) => ({ default: m.BacktestReport })));
 
@@ -181,11 +182,7 @@ function BacktestLab() {
           </button>
         </div>
 
-        {err && (
-          <div style={{ fontSize: theme.fontSize.micro, color: theme.down, background: "rgba(248,81,73,0.08)", border: `1px solid ${theme.down}`, borderRadius: 3, padding: "4px 8px" }}>
-            {err}
-          </div>
-        )}
+        {err && <InlineError msg={err} />}
 
         {/* ── live progress for the running job ── */}
         {job && job.status !== "done" && (

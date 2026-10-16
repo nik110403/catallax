@@ -16,6 +16,7 @@ import { PanelHead } from "./PanelHead";
 import { PanelState } from "./PanelState";
 import { registerWidget } from "./registry";
 import { useAsync } from "./useAsync";
+import { InlineError } from "./InlineError";
 
 const LADDER_SECTIONS: { key: keyof Pick<Note, "why_it_matters" | "action" | "risk_invalidation" | "body">; label: string }[] = [
   { key: "why_it_matters", label: "Why it matters" },
@@ -96,11 +97,7 @@ function NoteView() {
         </button>
       </PanelHead>
       <div style={{ padding: "10px 12px", flex: 1, minHeight: 0, overflowY: "auto" }}>
-        {exportErr && (
-          <div role="alert" style={{ fontSize: theme.fontSize.micro, color: theme.down, background: "rgba(248,81,73,0.08)", border: `1px solid ${theme.down}`, borderRadius: 3, padding: "4px 8px", marginBottom: 8 }}>
-            {exportErr}
-          </div>
-        )}
+        {exportErr && <InlineError msg={exportErr} style={{ marginBottom: 8 }} />}
         {!selectedSlug ? (
           <PanelState kind="empty" message="No note selected" hint="Pick one from the dropdown above." />
         ) : noteState.loading ? (

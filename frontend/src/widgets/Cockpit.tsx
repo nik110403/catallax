@@ -2,7 +2,8 @@
 // assistant output is cited, and a journal draft remains a user action.
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, api } from "../api/client";
+import { ApiError, READ_ONLY_DEMO_MESSAGE, api, isReadOnlyDemoError } from "../api/client";
+import { InlineError } from "./InlineError";
 import type { CockpitJob, CockpitMessage, CockpitSession } from "../api/types";
 import { theme } from "../theme";
 import { PanelHead } from "./PanelHead";
@@ -201,6 +202,7 @@ function Cockpit() {
         if (selectedRef.current === key) setMessages(session.messages);
       }
     } catch (e) {
+      if (isReadOnlyDemoError(e)) { setError(READ_ONLY_DEMO_MESSAGE); return; }
       if (submittedTo && !accepted) setUncertainSession(submittedTo);
       setError(`${e instanceof Error ? e.message : "Unable to queue cockpit question"}. Check the session transcript before submitting again; the request may have been accepted.`);
     }
@@ -234,7 +236,7 @@ function Cockpit() {
       right now" rather than "available but greyed out". */}
   return <div style={{ display: "flex", flexDirection: "column", height: "100%" }}><PanelHead deck="Read-only, cited answers from your records" agate={<span style={{ letterSpacing: "0.06em" }}>READ-ONLY ANALYST</span>}>{!disabled && <button type="button" style={buttonStyle} onClick={() => { setSelected(null); setMessages([]); }}>NEW SESSION</button>}</PanelHead><div style={{ padding: "8px 10px", minHeight: 0, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
     {loading ? <PanelState kind="loading" skeleton="table" /> : disabled ? <PanelState kind="empty" message="Cockpit is not enabled (COCKPIT_ENABLED=false)." hint="Start the AI profile with docker compose --profile ai up -d after enabling the flag." fill /> : <>
-      {error && <PanelState kind="error" message={error} onRetry={() => { setError(null); if (selected) refreshJobSession(selected); else void loadSessions(); }} />}
+      {error === READ_ONLY_DEMO_MESSAGE ? <InlineError msg={error} /> : error && <PanelState kind="error" message={error} onRetry={() => { setError(null); if (selected) refreshJobSession(selected); else void loadSessions(); }} />}
       {uncertainSession && <button type="button" style={buttonStyle} onClick={() => void checkUncertainSubmit()}>Check submitted question before asking again</button>}
       {sessions.length > 1 && <label style={{ color: theme.muted, fontSize: theme.fontSize.micro }}>SESSION <select value={selected ?? ""} onChange={(event) => setSelected(event.target.value)} style={{ marginLeft: 6, ...buttonStyle }}>{sessions.map((session) => <option key={session.session_key} value={session.session_key}>{session.title ?? "Untitled session"}</option>)}</select></label>}
       {messages.length ? <Transcript messages={messages} /> : <PanelState kind="empty" message="Ask a question about the record" hint="Answers cite the records they use; the cockpit cannot write or execute." />}

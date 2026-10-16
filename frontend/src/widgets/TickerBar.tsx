@@ -19,6 +19,7 @@ import { ApiError, api } from "../api/client";
 import type { WatchlistItemInput } from "../api/types";
 import { useTicker } from "../api/useTicker";
 import { LOCALE } from "../format";
+import { InlineError } from "./InlineError";
 
 type WLItem = { symbol: string; source: string | null };
 
@@ -378,11 +379,7 @@ export function TickerBar() {
                 Add
               </button>
             </div>
-            {error && (
-              <div className="ticker-editor-error" role="alert">
-                {error}
-              </div>
-            )}
+            {error && <InlineError msg={error} variant="text" />}
             <div className="ticker-editor-actions">
               <button type="button" className="ticker-editor-btn" onClick={closeEditor} disabled={saving}>
                 Cancel

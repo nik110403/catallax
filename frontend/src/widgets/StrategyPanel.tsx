@@ -14,6 +14,7 @@ import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
 import { registerWidget } from "./registry";
 import { useAsync } from "./useAsync";
+import { InlineError } from "./InlineError";
 
 const STATUS_COLOR: Record<string, string> = {
   running: theme.up,
@@ -214,20 +215,7 @@ function StrategyPanel() {
       </div>
 
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 10 }}>
-        {err && (
-          <div
-            style={{
-              fontSize: theme.fontSize.micro,
-              color: theme.down,
-              background: "rgba(248,81,73,0.08)",
-              border: `1px solid ${theme.down}`,
-              borderRadius: 3,
-              padding: "4px 8px",
-            }}
-          >
-            {err}
-          </div>
-        )}
+        {err && <InlineError msg={err} />}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {strategies.map((s) => (

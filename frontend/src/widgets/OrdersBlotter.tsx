@@ -11,6 +11,7 @@ import { LOCALE } from "../format";
 import { theme } from "../theme";
 import { deckLine } from "./help";
 import { PanelHead } from "./PanelHead";
+import { InlineError } from "./InlineError";
 
 const STATUS_COLOR: Record<string, string> = {
   filled: theme.up,
@@ -99,7 +100,7 @@ export function OrdersBlotter() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <PanelHead deck={deckLine("algo-blotter")} />
-      {err && <div style={{ fontSize: theme.fontSize.micro, color: theme.down, padding: "4px 8px" }}>{err}</div>}
+      {err && <InlineError msg={err} variant="text" style={{ padding: "4px 8px" }} />}
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>

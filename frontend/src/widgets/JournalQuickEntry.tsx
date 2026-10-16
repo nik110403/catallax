@@ -25,6 +25,7 @@ import { theme } from "../theme";
 import { controlStyle } from "./chartTheme";
 import { PanelHead } from "./PanelHead";
 import { registerWidget } from "./registry";
+import { InlineError } from "./InlineError";
 
 const JOURNAL_API = "/api/v1/journal";
 
@@ -523,11 +524,7 @@ export function JournalEntryForm({
         )}
       </div>
 
-      {err && (
-        <div role="alert" style={{ fontSize: theme.fontSize.micro, color: theme.down, background: "rgba(248,81,73,0.08)", border: `1px solid ${theme.down}`, borderRadius: 3, padding: "4px 8px" }}>
-          {err}
-        </div>
-      )}
+      {err && <InlineError msg={err} />}
 
       {/* On submit it shows the emitted forecast inline — the point of the
           phase is that writing is what feeds calibration, so the user must

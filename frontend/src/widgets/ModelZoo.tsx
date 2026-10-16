@@ -23,6 +23,7 @@ import { PanelHead } from "./PanelHead";
 import { Provenance } from "./Provenance";
 import { registerWidget } from "./registry";
 import { useAsync } from "./useAsync";
+import { InlineError } from "./InlineError";
 
 const FALLBACK_ENGINES = ["sklearn-ensemble", "deep-zoo"];
 
@@ -522,20 +523,7 @@ function ModelZoo() {
           </button>
         </div>
 
-        {err && (
-          <div
-            style={{
-              fontSize: theme.fontSize.micro,
-              color: theme.down,
-              background: "rgba(248,81,73,0.08)",
-              border: `1px solid ${theme.down}`,
-              borderRadius: 3,
-              padding: "4px 8px",
-            }}
-          >
-            {err}
-          </div>
-        )}
+        {err && <InlineError msg={err} />}
 
         {/* live progress */}
         {job && job.status !== "done" && (

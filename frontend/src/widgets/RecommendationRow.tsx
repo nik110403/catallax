@@ -41,6 +41,7 @@ import {
   localDatetimeInputDefault,
   localDatetimeInputToISOString,
 } from "./reportsShared";
+import { InlineError } from "./InlineError";
 
 // Phase 18: widened from {"accepted","overridden"} to the full set of
 // outcomes a card can now record locally. `"rejected"` is a CLIENT-ONLY tag —
@@ -485,11 +486,7 @@ function RecommendationCard({
           recommendation id from the `/decisions` projection — the one thing
           the FROZEN `advisor_report.py` projection this card also reads
           never carried. */}
-      {err && (
-        <div role="alert" style={{ fontSize: theme.fontSize.micro, color: theme.down }}>
-          {err}
-        </div>
-      )}
+      {err && <InlineError msg={err} variant="text" />}
     </div>
   );
 }
@@ -801,11 +798,7 @@ function ExecuteForm({
       <span style={{ fontSize: theme.fontSize.micro, color: theme.muted }}>
         Recorded permanently — this cannot be undone (append-only decision log).
       </span>
-      {err && (
-        <div role="alert" style={{ fontSize: theme.fontSize.micro, color: theme.down }}>
-          {err}
-        </div>
-      )}
+      {err && <InlineError msg={err} variant="text" />}
     </div>
   );
 }

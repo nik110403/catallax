@@ -9,6 +9,7 @@ import { deckLine } from "./help";
 import { JobStatus } from "./JobStatus";
 import { PanelHead } from "./PanelHead";
 import { registerWidget } from "./registry";
+import { InlineError } from "./InlineError";
 
 function IntelRunner() {
   const [jobId, setJobId] = useState<string | null>(null);
@@ -45,11 +46,7 @@ function IntelRunner() {
         </button>
       </PanelHead>
       <div tabIndex={0} style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "8px 10px" }}>
-        {err && (
-          <div style={{ fontSize: theme.fontSize.micro, color: theme.down, background: "rgba(248,81,73,0.08)", border: `1px solid ${theme.down}`, borderRadius: 3, padding: "4px 8px" }}>
-            {err}
-          </div>
-        )}
+        {err && <InlineError msg={err} />}
 
         {jobId && (
           <JobStatus
