@@ -51,7 +51,7 @@ def _render() -> dict:
             "redis": _svc(cap_add=["CHOWN", "SETGID", "SETUID"]),
             "demo-warm": _svc(networks={"default": None, "macro-net": None},
                               environment={"OPENBB_FRED_API_KEY": "demo-fred-key", "DEMO_FRED_API_KEY": ""}),
-            "openbb-data": _svc(networks={"macro-net": None}, pids_limit=256, user="10001:10001", logging={"driver": "local", "options": {"max-size": "1m", "max-file": "1"}},
+            "openbb-data": _svc(networks={"macro-net": None}, pids_limit=256, user="10001:10001", logging={"driver": "local", "options": {"max-size": "1m", "max-file": "1", "compress": "false"}},
                                 environment={"OPENBB_FRED_API_KEY": "demo-fred-key", "OPENBB_API_PORT": "6900"}),
         },
     }

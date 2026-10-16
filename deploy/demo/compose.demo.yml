@@ -217,7 +217,7 @@ services:
     # OpenBB tracebacks can carry provider URLs with api_key=...: keep the container log tiny.
     logging:
       driver: local
-      options: {max-size: "1m", max-file: "1"}
+      options: {max-size: "1m", max-file: "1", compress: "false"}  # local driver refuses compression with 1 file
     restart: "no"
 
   # One-shot sample-artifact seed (DEMO-SPEC §13): migrates, then writes the synthetic
