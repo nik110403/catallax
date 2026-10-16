@@ -282,6 +282,7 @@ async def test_warm_backfills_daily_bars_in_live_mode(monkeypatch: pytest.Monkey
     monkeypatch.setattr(dw.build_chain("equity", _FakeRedis(), get_settings()).__class__, "get_quote", _noop)
     monkeypatch.setattr(CoinGeckoAdapter, "get_quote", _noop)
     monkeypatch.setattr(dw.MarketResearchEngine, "bundle", _noop)
+    monkeypatch.setattr(dw, "warm_macro", _noop)  # macro step: test_demo_warm_macro.py
     monkeypatch.setattr(ShillerAdapter, "cape", _noop)
     monkeypatch.setattr(BreadthAdapter, "diary", _noop)
     monkeypatch.setattr(SentimentAdapter, "fear_greed", _noop)
@@ -358,6 +359,7 @@ async def test_warm_classifies_step_failures(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(dw.build_chain("equity", _FakeRedis(), get_settings()).__class__, "get_quote", _noop)
     monkeypatch.setattr(CoinGeckoAdapter, "get_quote", _noop)
     monkeypatch.setattr(dw.MarketResearchEngine, "bundle", _noop)
+    monkeypatch.setattr(dw, "warm_macro", _noop)  # macro step: test_demo_warm_macro.py
     monkeypatch.setattr(ShillerAdapter, "cape", _boom)
     monkeypatch.setattr(BreadthAdapter, "diary", _noop)
     monkeypatch.setattr(SentimentAdapter, "fear_greed", _noop)

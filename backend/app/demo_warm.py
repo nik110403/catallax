@@ -74,6 +74,10 @@ TICKER_FEED = (
 MACRO_SERIES = (("CPI.united_states", "toya"),)
 MACRO_READY_WAIT_SECONDS = 120.0  # openbb-data boots with the job; bounded wait for its schema
 MACRO_READY_POLL_SECONDS = 3.0
+# econdb answers an empty 204 now and then under load (seen against the real sidecar), so a
+# call that returns nothing is retried before the step counts as failed.
+MACRO_ATTEMPTS = 3
+MACRO_RETRY_WAIT_SECONDS = 5.0
 
 
 def macro_series_targets(settings: Settings) -> list[tuple[str, str]]:
@@ -107,12 +111,16 @@ async def _macro_ready(settings: Settings) -> None:
         await asyncio.sleep(MACRO_READY_POLL_SECONDS)
 
 
-async def _macro_call(label: str, coro) -> None:  # noqa: ANN001
-    """One MacroAdapter call that must have written fresh data: an empty or stale-served
-    result means the live source returned nothing, which is a failed warm of that key."""
-    env = await coro
-    if env.stale or _macro_empty(env.data):
-        raise RuntimeError(f"{label}: no live data (stale={env.stale})")
+async def _macro_call(label: str, make) -> None:  # noqa: ANN001
+    """One MacroAdapter call (`make()` builds the coroutine) that must have written fresh data:
+    an empty or stale-served result means the live source returned nothing; retried, then failed."""
+    for attempt in range(MACRO_ATTEMPTS):
+        env = await make()
+        if not (env.stale or _macro_empty(env.data)):
+            return
+        if attempt + 1 < MACRO_ATTEMPTS:
+            await asyncio.sleep(MACRO_RETRY_WAIT_SECONDS)
+    raise RuntimeError(f"{label}: no live data after {MACRO_ATTEMPTS} attempts (stale={env.stale})")
 
 
 async def warm_macro(redis: Redis, settings: Settings, step) -> None:  # noqa: ANN001
@@ -128,19 +136,19 @@ async def warm_macro(redis: Redis, settings: Settings, step) -> None:  # noqa: A
         await step("macro ready", _raise(exc))
         return
     for region in ("US", "EU"):
-        await step(f"macro yield-curve {region}", _macro_call(f"yield-curve {region}", adapter.yield_curve(region)))
-    await step("macro rates", _macro_call("rates", adapter.rates()))
-    await step("macro indicators", _macro_call("indicators", adapter.indicators()))
+        await step(f"macro yield-curve {region}", _macro_call(f"yield-curve {region}", lambda region=region: adapter.yield_curve(region)))
+    await step("macro rates", _macro_call("rates", adapter.rates))
+    await step("macro indicators", _macro_call("indicators", adapter.indicators))
     has_key = bool(settings.openbb_fred_api_key)
     if has_key:
-        await step("macro calendar", _macro_call("calendar", adapter.calendar()))
+        await step("macro calendar", _macro_call("calendar", adapter.calendar))
     else:
         logger.warning("warm macro calendar skipped: no DEMO_FRED_API_KEY (the Calendar widget stays empty)")
     for sid, transform in macro_series_targets(settings):
         if "." not in sid and not has_key:
             logger.warning("warm macro series %s skipped: no DEMO_FRED_API_KEY", sid)
             continue
-        await step(f"macro series {sid}:{transform}", _macro_call(f"series {sid}", adapter.series(sid, transform)))
+        await step(f"macro series {sid}:{transform}", _macro_call(f"series {sid}", lambda sid=sid, transform=transform: adapter.series(sid, transform)))
 
 
 async def _raise(exc: Exception) -> None:

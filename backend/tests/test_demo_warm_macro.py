@@ -78,6 +78,7 @@ def macro_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(MacroAdapter, "_results", _results)
     monkeypatch.setattr(MacroAdapter, "_client", lambda self: _Client())
     monkeypatch.setattr(dw, "_macro_ready", _ready)
+    monkeypatch.setattr(dw, "MACRO_RETRY_WAIT_SECONDS", 0.0)
     monkeypatch.setenv("UPSTREAM_MODE", "live")
 
     def settings(key: str | None):  # noqa: ANN202
@@ -157,3 +158,16 @@ async def test_empty_upstream_result_is_a_failed_step(macro_env, monkeypatch: py
     monkeypatch.setattr(MacroAdapter, "_results", _none)
     failed = await _run_macro(dw, redis, settings(None))
     assert any("yield-curve US" in f for f in failed) and not any(k.startswith("macro:") for k in redis.kv)
+
+
+async def test_a_transient_empty_answer_is_retried(macro_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    dw, redis, settings = macro_env
+    calls = {"n": 0}
+
+    async def _flaky(self, client, path, params):  # noqa: ANN001
+        calls["n"] += 1
+        return [] if calls["n"] == 1 else _ROWS[path]
+
+    monkeypatch.setattr(MacroAdapter, "_results", _flaky)
+    assert await _run_macro(dw, redis, settings(None)) == []
+    assert "macro:yc:US" in redis.kv
