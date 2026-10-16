@@ -7,9 +7,11 @@ boards, then exits. Scheduling (every 15 min in market hours, hourly otherwise)
 lives in deploy/demo/, not here.
 
 Default symbols = the demo persona's holdings (`services/demo.WF_ASSETS`);
-override with `DEMO_WARM_SYMBOLS=AAPL,BTC,...`. Exit status is 0 even when
-individual fetches fail (a throttled source must not crash-loop the timer);
-failures are logged and counted.
+override with `DEMO_WARM_SYMBOLS=AAPL,BTC,...`. Individual failures never
+stop the run; they are logged and counted, and the exit status is non-zero when
+any step failed so the timer unit shows it. It also backfills two years of
+daily bars into Postgres (`daily_bars`) through `HistoryStore`, because
+cache-only mode cannot backfill and history/risk/signals read from there.
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 
 from redis.asyncio import Redis
 
@@ -26,10 +29,14 @@ from app.adapters.fundamentals_adapter import FundamentalsAdapter
 from app.adapters.sentiment_adapter import SentimentAdapter
 from app.adapters.shiller_adapter import ShillerAdapter
 from app.config import Settings, get_settings
+from app.db import dispose_engine, init_engine, session_scope
 from app.services import markets, news
 from app.services.demo import WF_ASSETS
+from app.services.history import HistoryStore
 
 logger = logging.getLogger("catallax.demo_warm")
+
+HISTORY_DAYS = 730  # visitors' history/risk/signals windows must be covered by stored bars
 
 
 def warm_symbols(settings: Settings) -> list[tuple[str, str]]:
@@ -39,6 +46,16 @@ def warm_symbols(settings: Settings) -> list[tuple[str, str]]:
     if not configured:
         return [(a.symbol, a.asset_class) for a in WF_ASSETS]
     return [(s, by_symbol.get(s, "equity")) for s in configured]
+
+
+async def _warm_history(redis: Redis, settings: Settings, symbol: str, asset_class: str) -> None:
+    """Backfill `daily_bars` through HistoryStore with the same adapter chain the
+    API's default price route uses, so the stored (symbol, source) key matches."""
+    chain = build_chain(asset_class, redis, settings)
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=HISTORY_DAYS)
+    async with session_scope() as db:
+        await HistoryStore(db, redis, settings).get_daily(chain, symbol, start, end)
 
 
 async def warm(redis: Redis, settings: Settings) -> tuple[int, int]:
@@ -62,6 +79,8 @@ async def warm(redis: Redis, settings: Settings) -> tuple[int, int]:
     for sym, cls in symbols:
         if cls == "equity":
             await step(f"fundamentals {sym}", fundamentals.statements(sym, asset_class=cls))
+    for sym, cls in symbols:
+        await step(f"history {sym}", _warm_history(redis, settings, sym, cls))
     sentiment = SentimentAdapter(redis, settings)
     await step("markets", markets.get_overview(redis, settings))
     await step("quakes", markets.get_quakes(redis, settings))
@@ -78,12 +97,14 @@ async def _main() -> int:
     get_settings.cache_clear()
     settings = get_settings()
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    init_engine()
     try:
         ok, failed = await warm(redis, settings)
     finally:
         await redis.aclose()
+        await dispose_engine()
     logger.info("demo warm done: %d ok, %d failed", ok, failed)
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

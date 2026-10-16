@@ -21,8 +21,13 @@ services:
       # LAN port (reached by the edge proxy). DEMO_BIND_ADDR must be the LAN
       # interface address; the preflight refuses 0.0.0.0.
       - "${DEMO_BIND_ADDR:-127.0.0.1}:${DEMO_PORT:-8190}:80"
-      # Loopback-only port for the seed script and health probes.
-      - "127.0.0.1:${DEMO_SEED_PORT:-8191}:80"
+    # Fava does not run in the demo (profile "never"), so drop it from the
+    # base file's depends_on; the demo nginx has no fava upstream.
+    depends_on: !override
+      fastapi-backend:
+        condition: service_healthy
+      react-frontend:
+        condition: service_started
     volumes:
       # Same target as the base file's nginx.conf mount: this one replaces it.
       - ./deploy/demo/nginx.demo.conf:/etc/nginx/nginx.conf:ro,z
@@ -45,11 +50,12 @@ services:
     environment:
       HOME: /tmp
       DEMO_MODE: "true"
-      DEMO_READONLY: "${DEMO_READONLY:-true}"  # reset-demo.sh flips it off only while seeding
+      DEMO_READONLY: "true"  # never unlocked: the demo is not seeded
       UPSTREAM_MODE: cache-only
       LLM_PROVIDER: noop
       SHARE_PASSPHRASE: ""
       WS_MAX_CONNECTIONS: "20"
+      WS_MAX_LIFETIME_SECONDS: "900"
       FAVA_BASE_URL: http://fava:5001/fava
       # Fresh keys still expire quickly; the long-lived stale copy is what the
       # cache-only backend serves between warm runs (hourly outside market hours).
@@ -77,8 +83,11 @@ services:
     cpus: 0.5
     tmpfs: [/tmp]
 
+  # Never started: nothing in the demo reaches it (nginx answers /fava/ with 404).
+  # Stays hardened in case someone activates the profile by hand.
   fava:
     <<: *hardened
+    profiles: ["never"]
     mem_limit: 128m
     cpus: 0.5
     tmpfs: [/tmp]
@@ -90,6 +99,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     cap_add: [DAC_OVERRIDE]
+    read_only: true  # only writes into the mounted volume
     mem_limit: 16m
     cpus: 0.25
 
@@ -107,12 +117,16 @@ services:
       UPSTREAM_MODE: live
       LLM_PROVIDER: noop
       SHARE_PASSPHRASE: ""
+      # The writer sets the stale-copy TTL: it must match the backend's reader.
+      QUOTE_STALE_TTL_SECONDS: "172800"
     mem_limit: 256m
     cpus: 0.5
     tmpfs: [/tmp]
     restart: "no"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   # Heavy / worker services stay off: the profile is never activated.

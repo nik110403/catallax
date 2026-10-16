@@ -7,5 +7,6 @@ Requires=docker.service
 Type=oneshot
 # Replace @STACK_DIR@ with the demo clone, e.g. via: sed "s|@STACK_DIR@|$PWD|g"
 WorkingDirectory=@STACK_DIR@
-ExecStart=@STACK_DIR@/deploy/demo/compose.sh --profile warm run --rm demo-warm
+# Same lock as reset-demo.sh: never overlaps with the nightly reset.
+ExecStart=/usr/bin/flock -w 600 @STACK_DIR@/.demo-lock @STACK_DIR@/deploy/demo/compose.sh --profile warm run --rm demo-warm
 TimeoutStartSec=10min

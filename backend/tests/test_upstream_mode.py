@@ -29,6 +29,7 @@ from app.adapters.stooq_adapter import StooqAdapter
 from app.adapters.yfinance_adapter import YFinanceAdapter
 from app.config import get_settings
 from app.errors import UpstreamError
+from app.upstream import is_cache_only
 from app.services import markets, news
 
 _NOW = datetime(2026, 1, 2, tzinfo=timezone.utc)
@@ -234,9 +235,84 @@ async def test_warm_job_forces_live_mode(monkeypatch: pytest.MonkeyPatch) -> Non
                 async def aclose(self) -> None: ...
             return _C()
 
+    async def _dispose() -> None: ...
+
     monkeypatch.setattr(dw, "warm", _fake_warm)
     monkeypatch.setattr(dw, "Redis", _R)
+    monkeypatch.setattr(dw, "init_engine", lambda: None)
+    monkeypatch.setattr(dw, "dispose_engine", _dispose)
     assert await dw._main() == 0
     assert seen["mode"] == "live"
     monkeypatch.delenv("UPSTREAM_MODE", raising=False)
+    get_settings.cache_clear()
+
+
+async def test_warm_backfills_daily_bars_in_live_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The warm job (the one process allowed upstream) feeds HistoryStore for every
+    persona symbol; the adapter it hands over is live, so the backfill is not guarded."""
+    from contextlib import asynccontextmanager
+
+    import app.demo_warm as dw
+
+    monkeypatch.setenv("UPSTREAM_MODE", "live")
+    monkeypatch.setenv("DEMO_WARM_SYMBOLS", "AAPL,BTC")
+    get_settings.cache_clear()
+    seen: list[tuple[str, str, int]] = []
+
+    @asynccontextmanager
+    async def _scope():
+        yield object()
+
+    class _Store:
+        def __init__(self, db, redis, settings) -> None:  # noqa: ANN001
+            self.settings = settings
+
+        async def get_daily(self, adapter, symbol, start, end):  # noqa: ANN001
+            assert not is_cache_only(adapter._chain[0]._settings)
+            seen.append((symbol, adapter.asset_type, (end - start).days))
+
+    async def _noop(*a, **k):  # noqa: ANN002, ANN003
+        return None
+
+    monkeypatch.setattr(dw, "session_scope", _scope)
+    monkeypatch.setattr(dw, "HistoryStore", _Store)
+    for name in ("get_overview", "get_quakes"):
+        monkeypatch.setattr(markets, name, _noop)
+    monkeypatch.setattr(news, "get_news", _noop)
+    monkeypatch.setattr(dw.build_chain("equity", _FakeRedis(), get_settings()).__class__, "get_quote", _noop)
+    monkeypatch.setattr(ShillerAdapter, "cape", _noop)
+    monkeypatch.setattr(BreadthAdapter, "diary", _noop)
+    monkeypatch.setattr(SentimentAdapter, "fear_greed", _noop)
+    monkeypatch.setattr(FundamentalsAdapter, "statements", _noop)
+
+    ok, failed = await dw.warm(_FakeRedis(), get_settings())
+    assert failed == 0
+    assert [s for s, _, _ in seen] == ["AAPL", "BTC"]
+    assert {d for _, _, d in seen} == {dw.HISTORY_DAYS}
+    monkeypatch.delenv("DEMO_WARM_SYMBOLS", raising=False)
+    monkeypatch.delenv("UPSTREAM_MODE", raising=False)
+    get_settings.cache_clear()
+
+
+async def test_warm_exit_status_reflects_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.demo_warm as dw
+
+    class _R:
+        @staticmethod
+        def from_url(*a, **k):  # noqa: ANN002, ANN003
+            class _C:
+                async def aclose(self) -> None: ...
+            return _C()
+
+    async def _dispose() -> None: ...
+
+    monkeypatch.setattr(dw, "Redis", _R)
+    monkeypatch.setattr(dw, "init_engine", lambda: None)
+    monkeypatch.setattr(dw, "dispose_engine", _dispose)
+    for failed, want in ((0, 0), (2, 1)):
+        async def _fake_warm(redis, settings, failed=failed):  # noqa: ANN001
+            return 5, failed
+
+        monkeypatch.setattr(dw, "warm", _fake_warm)
+        assert await dw._main() == want
     get_settings.cache_clear()

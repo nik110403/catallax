@@ -3,6 +3,11 @@
 # config and FAILS CLOSED on anything that could reach the private stack or open
 # a write/upstream path. Run before the first `up` and after every config change.
 #   deploy/demo/preflight-demo.sh
+# Private-infrastructure deny markers (host names, internal ranges, network names)
+# are NOT kept in this repo. DEMO_DENY_MARKERS_FILE names a file outside it, one
+# Python regex per line ('#' comments and blank lines ignored). Unset, missing or
+# empty => the preflight fails closed. It may also be set in the stack .env.
+# DEMO_BIND_ADDR (stack .env, default 127.0.0.1) is the one allowed port host_ip.
 # Test hook: PREFLIGHT_DEMO_RENDER=<file.json> checks a saved `config --format json`
 # render instead of invoking docker.
 set -euo pipefail
@@ -10,6 +15,14 @@ set -euo pipefail
 STACK="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 fail() { echo "PREFLIGHT-DEMO FAIL: $*" >&2; exit 1; }
 command -v python3 >/dev/null || fail "python3 not found"
+
+# Stack .env value for KEY (last assignment wins); shell env wins for the marker file.
+env_val() { sed -n "s/^$1=//p" "$STACK/.env" 2>/dev/null | tail -n1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"; }
+DEMO_DENY_MARKERS_FILE="${DEMO_DENY_MARKERS_FILE:-$(env_val DEMO_DENY_MARKERS_FILE)}"
+[ -n "$DEMO_DENY_MARKERS_FILE" ] || fail "DEMO_DENY_MARKERS_FILE is not set (file of private deny markers, outside the repo)"
+[ -r "$DEMO_DENY_MARKERS_FILE" ] || fail "DEMO_DENY_MARKERS_FILE $DEMO_DENY_MARKERS_FILE is not readable"
+DEMO_BIND_ADDR="$(env_val DEMO_BIND_ADDR)"; DEMO_BIND_ADDR="${DEMO_BIND_ADDR:-127.0.0.1}"
+export DEMO_DENY_MARKERS_FILE DEMO_BIND_ADDR
 
 if [ -n "${PREFLIGHT_DEMO_RENDER:-}" ]; then
   cfg="$(cat "$PREFLIGHT_DEMO_RENDER")"
@@ -31,6 +44,19 @@ bad = []
 
 if cfg.get("name") != "catallax-demo":
     bad.append("project name is %r, expected catallax-demo" % cfg.get("name"))
+
+# Capabilities some images genuinely need (entrypoint chown / setuid / port 80).
+# Anything not listed here must not add capabilities.
+CAP_ADD_ALLOWED = {
+    "nginx": {"CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"},
+    "react-frontend": {"CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"},
+    "postgres": {"CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"},
+    "redis": {"CHOWN", "SETGID", "SETUID"},
+    "notes-mount-init": {"DAC_OVERRIDE"},  # mkdir on a root-owned volume
+}
+# Services that may keep a writable root filesystem (none: writable paths are
+# tmpfs or volumes). Add "service": "reason" here if one truly needs it.
+WRITABLE_ROOTFS_ALLOWED = {}
 
 # Own networks/volumes only.
 for kind in ("networks", "volumes"):
@@ -98,8 +124,16 @@ for sname, svc in services.items():
         bad.append(L("missing security_opt no-new-privileges:true"))
     if "ALL" not in [str(c).upper() for c in (svc.get("cap_drop") or [])]:
         bad.append(L("missing cap_drop: [ALL]"))
-    if "wf-link" in (svc.get("networks") or {}):
-        bad.append(L("on wf-link"))
+    if svc.get("read_only") is not True and sname not in WRITABLE_ROOTFS_ALLOWED:
+        bad.append(L("missing read_only: true"))
+    extra_caps = {str(c).upper() for c in (svc.get("cap_add") or [])} - CAP_ADD_ALLOWED.get(sname, set())
+    if extra_caps:
+        bad.append(L("cap_add %s not allowlisted" % sorted(extra_caps)))
+    if any("unconfined" in str(o) for o in (svc.get("security_opt") or [])):
+        bad.append(L("security_opt contains unconfined"))
+    for n in (svc.get("networks") or {}):
+        if n not in (cfg.get("networks") or {}):
+            bad.append(L("network %r is not declared by this stack" % n))
 
 # Required demo environment on the backend.
 be = (services.get("fastapi-backend") or {}).get("environment") or {}
@@ -111,12 +145,30 @@ for k, v in want.items():
 if str(be.get("SHARE_PASSPHRASE", "x")) != "":
     bad.append("fastapi-backend: SHARE_PASSPHRASE must be empty")
 
-# Private-infrastructure markers anywhere in the render.
-blob = json.dumps(cfg)
-for pat, label in ((r"home\.arpa", "home.arpa"), (r"(?<![0-9])10\.0\.0\.", "10.0.0."),
-                   (r"core-01", "core-01"), (r"wf-link", "wf-link")):
+# Private-infrastructure markers anywhere in the render. Port host_ip is the
+# operators chosen LAN bind address and is excluded from the scan (it must equal
+# DEMO_BIND_ADDR; wildcard binds were rejected above).
+bind = os.environ["DEMO_BIND_ADDR"]
+scan = json.loads(json.dumps(cfg))
+for svc in (scan.get("services") or {}).values():
+    for pt in svc.get("ports") or []:
+        if not isinstance(pt, dict) or not pt.get("host_ip"):
+            continue
+        if pt["host_ip"] != bind:
+            bad.append("port host_ip %r is not DEMO_BIND_ADDR (%r)" % (pt["host_ip"], bind))
+        pt.pop("host_ip")
+blob = json.dumps(scan)
+markers = []
+with open(os.environ["DEMO_DENY_MARKERS_FILE"]) as fh:
+    for line in fh:
+        line = line.strip()
+        if line and not line.startswith("#"):
+            markers.append(line)
+if not markers:
+    bad.append("deny-marker file has no markers (fail closed)")
+for pat in markers:
     if re.search(pat, blob):
-        bad.append("rendered config contains private marker %r" % label)
+        bad.append("rendered config matches a private deny marker (see the marker file)")
 
 if bad:
     sys.exit("\n".join("  - " + b for b in bad))

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Nightly demo reset (DEMO-SPEC §2.5): wipe postgres + redis, bring the stack
-# back, seed the persona content, re-lock the app, then warm the caches.
+# back READ-ONLY, check that writes are refused, then warm the caches.
 # Run by catallax-demo-reset.service (03:30). Idempotent; safe to run by hand.
 #
-# Seeding needs writes, so the backend is started with DEMO_READONLY=false for
-# the seed only and then recreated read-only. The edge proxy refuses non-GET
-# methods the whole time and the LAN port is not forwarded, so the window is
-# not reachable from the internet.
+# The demo is never seeded and never unlocked: DEMO_READONLY is pinned to true
+# in compose.demo.yml and nothing here changes it. Config comes from the stack
+# `.env` (compose reads it itself), not from the caller's shell environment.
+#
+# A flock on $STACK/.demo-lock keeps reset and warm from running concurrently
+# (catallax-demo-warm.service takes the same lock).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -14,22 +16,53 @@ STACK="$(cd "$HERE/../.." && pwd -P)"
 DC="$HERE/compose.sh"
 cd "$STACK"
 
+# Read KEY from the stack .env (last assignment wins); never from the shell.
+env_val() { sed -n "s/^$1=//p" "$STACK/.env" 2>/dev/null | tail -n1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"; }
+[ -f "$STACK/.env" ] || { echo "reset-demo: $STACK/.env missing (copy deploy/demo/demo.env.example)" >&2; exit 1; }
+
+exec 9>"$STACK/.demo-lock"
+flock -w 1800 9 || { echo "reset-demo: could not take $STACK/.demo-lock (warm or reset still running)" >&2; exit 1; }
+
+DEMO_DENY_MARKERS_FILE="$(env_val DEMO_DENY_MARKERS_FILE)"
+export DEMO_DENY_MARKERS_FILE
 "$HERE/preflight-demo.sh"
+
+# Until the write probe has passed, any failure takes the stack down: a stack
+# that is not provably read-only must not serve. After that, only warm can fail
+# and the (read-only) stack stays up with whatever the caches hold.
+LOCKED=0
+cleanup() {
+  rc=$?
+  if [ "$rc" -ne 0 ] && [ "$LOCKED" -ne 1 ]; then
+    echo "reset-demo: failed (exit $rc) before the read-only check passed; taking the stack down" >&2
+    "$DC" down || true
+  fi
+}
+trap cleanup EXIT
 
 "$DC" down
 # Only the two stateful volumes; images and the rest are untouched.
 docker volume rm catallax-demo_postgres-data catallax-demo_redis-data 2>/dev/null || true
 
-DEMO_READONLY=false "$DC" up -d --wait
-NGINX_HOST_PORT="${DEMO_SEED_PORT:-8191}" "$STACK/bin/seed-demo.sh"
+"$DC" up -d --wait
 
-# Recreate with the default (read-only) flag, then verify the lock really is on.
-"$DC" up -d --force-recreate --wait fastapi-backend
-code="$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-  "http://127.0.0.1:${DEMO_SEED_PORT:-8191}/api/v1/watchlist" \
-  -H 'Content-Type: application/json' -d '{}')"
-[ "$code" = 403 ] || { echo "reset-demo: write probe returned $code, expected 403" >&2; exit 1; }
+# Write probe, run inside the backend container against its own port 8000
+# (nothing else is published for the script; the LAN port belongs to the edge).
+# Any non-GET on /api/v1/* must be answered 403 by the app middleware.
+code="$("$DC" exec -T fastapi-backend python -c '
+import urllib.request, urllib.error
+req = urllib.request.Request("http://127.0.0.1:8000/api/v1/watchlist", data=b"{}", method="POST",
+                             headers={"Content-Type": "application/json"})
+try:
+    print(urllib.request.urlopen(req).status)
+except urllib.error.HTTPError as e:
+    print(e.code)
+')"
+code="${code//[$'\r\n ']/}"
+[ "$code" = 403 ] || { echo "reset-demo: write probe returned '$code', expected 403" >&2; exit 1; }
+LOCKED=1
 
-# Redis was wiped: refill the caches so the demo is not empty until the next timer tick.
+# Redis and postgres were wiped: refill caches and daily bars so the demo is
+# not empty until the next timer tick.
 "$DC" --profile warm run --rm demo-warm
 echo "reset-demo: done"

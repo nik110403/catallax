@@ -1,5 +1,5 @@
 [Unit]
-Description=Catallax demo nightly reset (wipe postgres+redis, reseed, rewarm)
+Description=Catallax demo nightly reset (wipe postgres+redis, rewarm; read-only throughout)
 After=docker.service
 Requires=docker.service
 
