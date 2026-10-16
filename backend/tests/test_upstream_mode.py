@@ -280,6 +280,8 @@ async def test_warm_backfills_daily_bars_in_live_mode(monkeypatch: pytest.Monkey
         monkeypatch.setattr(markets, name, _noop)
     monkeypatch.setattr(news, "get_news", _noop)
     monkeypatch.setattr(dw.build_chain("equity", _FakeRedis(), get_settings()).__class__, "get_quote", _noop)
+    monkeypatch.setattr(CoinGeckoAdapter, "get_quote", _noop)
+    monkeypatch.setattr(dw.MarketResearchEngine, "bundle", _noop)
     monkeypatch.setattr(ShillerAdapter, "cape", _noop)
     monkeypatch.setattr(BreadthAdapter, "diary", _noop)
     monkeypatch.setattr(SentimentAdapter, "fear_greed", _noop)
@@ -354,16 +356,23 @@ async def test_warm_classifies_step_failures(monkeypatch: pytest.MonkeyPatch) ->
         monkeypatch.setattr(markets, name, _noop)
     monkeypatch.setattr(news, "get_news", _noop)
     monkeypatch.setattr(dw.build_chain("equity", _FakeRedis(), get_settings()).__class__, "get_quote", _noop)
+    monkeypatch.setattr(CoinGeckoAdapter, "get_quote", _noop)
+    monkeypatch.setattr(dw.MarketResearchEngine, "bundle", _noop)
     monkeypatch.setattr(ShillerAdapter, "cape", _boom)
     monkeypatch.setattr(BreadthAdapter, "diary", _noop)
     monkeypatch.setattr(SentimentAdapter, "fear_greed", _noop)
-    monkeypatch.setattr(FundamentalsAdapter, "statements", _boom)
+    monkeypatch.setattr(SentimentAdapter, "cot", _noop)
+    async def _statements(self, symbol, **k):  # noqa: ANN001, ANN003
+        if symbol == "AAPL":  # the held instrument; the screen universe stays fine
+            await _boom()
+
+    monkeypatch.setattr(FundamentalsAdapter, "statements", _statements)
 
     ok, core, optional = await dw.warm(_FakeRedis(), get_settings())
     assert (core, optional) == (0, 2) and ok > 0
     bars_fail["on"] = True
     _ok, core, optional = await dw.warm(_FakeRedis(), get_settings())
-    assert core > 0 and optional == 2
+    assert core > 0 and optional >= 2  # research-universe bars fail as optional, risk/signals bars as core
     monkeypatch.delenv("DEMO_WARM_SYMBOLS", raising=False)
     monkeypatch.delenv("UPSTREAM_MODE", raising=False)
     get_settings.cache_clear()

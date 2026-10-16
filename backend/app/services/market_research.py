@@ -298,6 +298,27 @@ class MarketResearchEngine:
         self._shiller = ShillerAdapter(redis, settings)
         self._breadth = BreadthAdapter(redis, settings)
 
+    def _price_symbols(self) -> list[str]:
+        """Every symbol whose daily bars `bundle()` fetches: cross-asset, sector and
+        factor ETFs, the benchmark and the vol indices (deduplicated, first-seen
+        order). `history_targets()` and the bundle share this, never a copy."""
+        s = self._settings
+        seen: set[str] = set()
+        out: list[str] = []
+        for sym, _ in [*s.market_research_cross_asset_map, *s.market_research_sectors_map,
+                       *s.market_research_factors_map, (s.market_research_benchmark, s.market_research_benchmark)]:
+            if sym not in seen:
+                seen.add(sym)
+                out.append(sym)
+        return list(dict.fromkeys(out + s.market_research_vol_list))
+
+    def history_targets(self) -> list[tuple[Any, str]]:
+        """[(adapter, symbol)] the market-research reads fetch daily bars through
+        (FRED/macro series are not price history and are not included); the demo
+        warm job stores exactly these keys."""
+        adapter = build_adapter("yfinance", self._redis, self._settings)
+        return [(adapter, sym) for sym in self._price_symbols()]
+
     # ── per-ETF/index fetch (own session, bounded concurrency) ─
     async def _fetch_one(
         self, symbol: str, start: datetime, end: datetime
@@ -465,21 +486,10 @@ class MarketResearchEngine:
         sec_map = s.market_research_sectors_map
         fac_map = s.market_research_factors_map
         bench = s.market_research_benchmark
-
-        # all ETF symbols (dedup while preserving first-seen order)
-        seen: set[str] = set()
-        etf_syms: list[str] = []
-        for sym, _ in [*ca_map, *sec_map, *fac_map, (bench, bench)]:
-            if sym not in seen:
-                seen.add(sym)
-                etf_syms.append(sym)
-
-        # vol symbols fetched separately (they may not be in the history store cleanly)
         vol_syms = s.market_research_vol_list
 
         # fan-out: ETFs + vol symbols concurrently
-        all_price_syms = list(dict.fromkeys(etf_syms + vol_syms))  # dedup, order preserved
-        price_series = await self._gather(all_price_syms, start, end)
+        price_series = await self._gather(self._price_symbols(), start, end)
 
         # fan-out: FRED series concurrently via MacroAdapter (each is already Redis-cached)
         fred_ids = s.market_research_fred_list

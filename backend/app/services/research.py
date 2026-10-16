@@ -372,6 +372,16 @@ class ResearchEngine:
         self._settings = settings
         self._fund = FundamentalsAdapter(redis, settings)
 
+    def _price_adapter(self, asset_class: str | None) -> YFinanceAdapter:
+        return YFinanceAdapter(self._redis, self._settings, crypto=crypto_hint(asset_class))
+
+    def history_targets(self) -> list[tuple[YFinanceAdapter, str]]:
+        """[(adapter, symbol)] `screen()` reads daily bars through for the configured
+        universe (same cap and adapter as `_price_series`); the demo warm job stores
+        these keys."""
+        universe = self._settings.research_universe_map[: self._settings.research_screen_max_symbols]
+        return [(self._price_adapter(None), sym) for sym, _label in universe]
+
     # ── price from the F0 backbone (own session) ──────────────
     async def _price_series(self, symbol: str, *, asset_class: str | None = None) -> pd.Series | None:
         """`asset_class` is the holding's KNOWN Wealthfolio class (review
@@ -383,7 +393,7 @@ class ResearchEngine:
         start = end - timedelta(days=self._settings.research_history_lookback_days)
         try:
             async with session_scope() as session:
-                adapter = YFinanceAdapter(self._redis, self._settings, crypto=crypto_hint(asset_class))
+                adapter = self._price_adapter(asset_class)
                 env = await HistoryStore(session, self._redis, self._settings).get_daily(
                     adapter, symbol, start, end
                 )
