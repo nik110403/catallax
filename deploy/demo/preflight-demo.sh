@@ -11,6 +11,8 @@
 # The env_file copy of it that compose inlines into each service's environment is
 # ignored by key name before the marker scan (every other key is still scanned).
 # Docker Compose >= 2.24.4 is required (compose.sh checks and fails closed).
+# The only bind allowed outside the stack dir: the macro handoff dir, read-only at /import,
+# on demo-warm (DEMO-SPEC section 12).
 # Test hook: PREFLIGHT_DEMO_RENDER=<file.json> checks a saved `config --format json`
 # render instead of invoking docker.
 set -euo pipefail
@@ -98,6 +100,7 @@ for sname, svc in services.items():
     for k in ("devices", "volumes_from"):
         if svc.get(k):
             bad.append(L("sets %s" % k))
+    handoff_seen = False
     for v in svc.get("volumes") or []:
         if not isinstance(v, dict):
             bad.append(L("volume entry not normalised: %r" % (v,)))
@@ -106,7 +109,12 @@ for sname, svc in services.items():
         if "docker.sock" in src or "docker.sock" in str(v.get("target", "")):
             bad.append(L("mounts a docker socket"))
         if v.get("type") == "bind" and not inside(src):
-            bad.append(L("bind mount %r is outside the stack dir" % src))
+            # The ONE exception: the macro handoff dir, read-only at /import, on demo-warm.
+            if (sname == "demo-warm" and v.get("target") == "/import" and v.get("read_only") is True
+                    and os.path.isabs(src) and not handoff_seen):
+                handoff_seen = True
+            else:
+                bad.append(L("bind mount %r is outside the stack dir" % src))
     for ef in svc.get("env_file") or []:
         p = ef.get("path") if isinstance(ef, dict) else ef
         if not p or not inside(p):

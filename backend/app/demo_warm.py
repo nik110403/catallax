@@ -8,7 +8,7 @@ lives in deploy/demo/, not here.
 
 Default symbols = the demo persona's holdings (`services/demo.WF_ASSETS`);
 override with `DEMO_WARM_SYMBOLS=AAPL,BTC,...`. On top of those it warms the
-holdings-independent read paths: the ticker-bar feed quotes, the market-research
+holdings-independent read paths (and imports the macro handoff file, `DEMO_MACRO_IMPORT`): the ticker-bar feed quotes, the market-research
 ETF/vol universe bars, the equity-research screen universe (bars + fundamentals).
 Quotes survive between runs through the stale-copy TTL (`QUOTE_STALE_TTL_SECONDS`,
 2 days in the demo), bars live in Postgres, fundamentals/sentiment/bundles have
@@ -41,6 +41,7 @@ from app.adapters.shiller_adapter import ShillerAdapter
 from app.config import Settings, get_settings
 from app.db import dispose_engine, init_engine, session_scope
 from app.errors import RateLimitExceeded
+from app.macro_import import import_macro
 from app.services import markets, news
 from app.services.demo import WF_ASSETS
 from app.services.history import HistoryStore
@@ -189,6 +190,8 @@ async def warm(redis: Redis, settings: Settings) -> tuple[int, int, int]:
     await step("breadth", BreadthAdapter(redis, settings).diary())
     await step("fear-greed", sentiment.fear_greed())
     await step("cot", sentiment.cot())
+    # Macro series handed over from the private install (optional); the bundle reads them.
+    await step("macro import", import_macro(redis, settings.macro_cache_ttl_seconds, os.environ.get("DEMO_MACRO_IMPORT")))
     # Recompute the market-research bundle from the bars just stored: a bundle cached
     # earlier from empty history would otherwise keep the null reports for its 6h TTL.
     await step("market-research bundle", MarketResearchEngine(redis, settings).bundle(refresh=True))

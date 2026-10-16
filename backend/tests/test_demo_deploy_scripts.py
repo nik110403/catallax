@@ -204,3 +204,33 @@ def test_compose_sh_version_gate_fails_closed(tmp_path: Path, version: str, ok: 
         assert r.returncode == 0 and "RAN" in r.stdout, r.stderr
     else:
         assert r.returncode == 1 and "RAN" not in r.stdout and "2.24.4" in r.stderr
+
+
+def _warm_with(volumes: list[dict], name: str = "demo-warm") -> dict:
+    render = _render()
+    render["services"][name] = _svc(volumes=volumes)
+    return render
+
+
+_HANDOFF = {"type": "bind", "source": "/srv/catallax-handoff", "target": "/import", "read_only": True}
+
+
+def test_preflight_allows_exactly_the_read_only_handoff_bind_on_demo_warm(tmp_path: Path) -> None:
+    r = _run_preflight(tmp_path, _warm_with([_HANDOFF]))
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.parametrize("label,render", [
+    ("rw handoff", _warm_with([{**_HANDOFF, "read_only": False}])),
+    ("wrong target", _warm_with([{**_HANDOFF, "target": "/data"}])),
+    ("other host dir rw", _warm_with([{"type": "bind", "source": "/etc", "target": "/etc2", "read_only": True}])),
+    ("two handoff binds", _warm_with([_HANDOFF, {**_HANDOFF, "source": "/srv/other"}])),
+    ("on the backend", None),
+    ("on another service", _warm_with([_HANDOFF], name="redis")),
+])
+def test_preflight_rejects_other_out_of_stack_binds(tmp_path: Path, label: str, render: dict | None) -> None:
+    if render is None:
+        render = _render()
+        render["services"]["fastapi-backend"]["volumes"] = [_HANDOFF]
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and "outside the stack dir" in r.stderr, label

@@ -460,6 +460,21 @@ class MacroAdapter:
         backend. Names/dates only (FRED publishes no consensus/actual here).
         """
         if not self.settings.openbb_fred_api_key:
+            # No key can still mean a cached/imported calendar (demo handoff): serve it first.
+            for suffix, stale in (("", False), (":stale", True)):
+                raw = await self.redis.get(f"macro:calendar{suffix}")
+                if raw is None:
+                    continue
+                try:
+                    cached = CalendarData.model_validate_json(raw)
+                except Exception as exc:
+                    logger.debug("macro calendar cache deserialise failed: %s", exc)
+                    continue
+                if cached.events:
+                    return Envelope.fresh(
+                        cached, source="fred", cache_hit=not stale, stale=stale,
+                        warnings=[_STALE_WARN] if stale else [],
+                    )
             data = CalendarData(events=[], needs_key=True)
             return Envelope.fresh(
                 data, source="fred", stale=True,

@@ -136,6 +136,12 @@ services:
       SHARE_PASSPHRASE: ""
       # The writer sets the stale-copy TTL: it must match the backend's reader.
       QUOTE_STALE_TTL_SECONDS: "172800"
+      # Macro series exported from the private install (DEMO-SPEC section 12); optional.
+      DEMO_MACRO_IMPORT: /import/macro.json
+    # Read-only handoff dir, on this service only (the backend gets no mount). If the host
+    # dir is missing docker creates it empty and the import step skips.
+    volumes:
+      - ${DEMO_HANDOFF_DIR:-/srv/catallax-handoff}:/import:ro
     mem_limit: 256m
     cpus: 0.5
     tmpfs: [/tmp]
