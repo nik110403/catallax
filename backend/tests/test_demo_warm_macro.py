@@ -171,3 +171,47 @@ async def test_a_transient_empty_answer_is_retried(macro_env, monkeypatch: pytes
     monkeypatch.setattr(MacroAdapter, "_results", _flaky)
     assert await _run_macro(dw, redis, settings(None)) == []
     assert "macro:yc:US" in redis.kv
+
+
+def _calendar_with_real_httpx(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MacroAdapter.calendar() through a real httpx client on a mock transport (httpx logs the URL)."""
+    import httpx
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"release_dates": [{"date": "2026-10-20", "release_name": "CPI"}]})
+
+    monkeypatch.setattr(MacroAdapter, "_client",
+                        lambda self: httpx.AsyncClient(transport=httpx.MockTransport(_handler)))
+
+
+@pytest.fixture
+def httpx_loggers():
+    import logging
+
+    saved = {n: logging.getLogger(n).level for n in ("httpx", "httpcore")}
+    yield
+    for n, lvl in saved.items():
+        logging.getLogger(n).setLevel(lvl)
+
+
+async def test_the_fred_key_never_reaches_the_logs(macro_env, monkeypatch: pytest.MonkeyPatch,
+                                                  caplog: pytest.LogCaptureFixture, httpx_loggers) -> None:
+    import logging
+
+    dw, redis, settings = macro_env
+    key = "SECRETFREDKEY0123456789abcdef"
+    _calendar_with_real_httpx(monkeypatch)
+    monkeypatch.setattr(dw, "macro_series_targets", lambda s: [])
+    # control: with httpx at INFO (what basicConfig(INFO) gives) the URL, key included, is logged
+    logging.getLogger("httpx").setLevel(logging.INFO)
+    with caplog.at_level(logging.DEBUG):
+        await _run_macro(dw, redis, settings(key))
+    assert key in caplog.text
+    # the job's logging setup must silence it
+    caplog.clear()
+    redis.kv.clear()
+    dw._configure_logging()
+    with caplog.at_level(logging.DEBUG):
+        failed = await _run_macro(dw, redis, settings(key))
+    assert failed == [] and "macro:calendar" in redis.kv
+    assert key not in caplog.text

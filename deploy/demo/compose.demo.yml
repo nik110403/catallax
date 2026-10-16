@@ -199,19 +199,21 @@ services:
 
   # Macro-data sidecar (warm profile only). demo-warm starts it with each run and the warm
   # scripts (warm-demo.sh, reset-demo.sh) stop it afterwards, so it holds no memory between
-  # warms. Alone on macro-net with demo-warm; no host port. The entrypoint writes the FRED
-  # credential store under /root/.openbb_platform: a tmpfs, so the rootfs stays read-only.
+  # warms. Alone on macro-net with demo-warm; no host port.
   openbb-data:
     <<: *hardened
     profiles: ["warm"]
     networks: !override [macro-net]
+    # Non-root; HOME=/tmp (a tmpfs) holds the FRED credential store the entrypoint writes.
+    user: "10001:10001"
     environment:
       OPENBB_API_PORT: "6900"
       OPENBB_FRED_API_KEY: ${DEMO_FRED_API_KEY:-}
       HOME: /tmp
-    tmpfs: [/tmp, /root/.openbb_platform]
+    tmpfs: [/tmp]
     mem_limit: 768m
     cpus: 1.0
+    pids_limit: 256
     restart: "no"
 
   # One-shot sample-artifact seed (DEMO-SPEC §13): migrates, then writes the synthetic

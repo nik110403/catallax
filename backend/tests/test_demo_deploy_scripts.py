@@ -51,7 +51,7 @@ def _render() -> dict:
             "redis": _svc(cap_add=["CHOWN", "SETGID", "SETUID"]),
             "demo-warm": _svc(networks={"default": None, "macro-net": None},
                               environment={"OPENBB_FRED_API_KEY": "demo-fred-key", "DEMO_FRED_API_KEY": ""}),
-            "openbb-data": _svc(networks={"macro-net": None},
+            "openbb-data": _svc(networks={"macro-net": None}, pids_limit=256, user="10001:10001",
                                 environment={"OPENBB_FRED_API_KEY": "demo-fred-key", "OPENBB_API_PORT": "6900"}),
         },
     }
@@ -263,6 +263,14 @@ def test_preflight_rejects_openbb_data_on_the_default_network_or_with_a_port(tmp
           "host port")
 
 
+def test_preflight_requires_pids_limit_and_non_root_on_openbb_data(tmp_path: Path) -> None:
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].pop("pids_limit"), "pids_limit")
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(pids_limit=0), "pids_limit")
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].pop("user"), "non-root")
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(user="0:0"), "non-root")
+    _fail(tmp_path, lambda r: r["services"]["openbb-data"].update(user="root"), "non-root")
+
+
 def test_preflight_rejects_a_backend_fred_key(tmp_path: Path) -> None:
     _fail(tmp_path, lambda r: r["services"]["fastapi-backend"]["environment"].update(OPENBB_FRED_API_KEY="k"), "OPENBB_FRED_API_KEY")
     _fail(tmp_path, lambda r: r["services"]["fastapi-backend"]["environment"].update(DEMO_FRED_API_KEY="k"), "FRED key")
@@ -324,7 +332,7 @@ def test_reset_builds_the_images_before_tearing_the_stack_down(tmp_path: Path) -
     # Regression (C7d): a stale catallax-demo-backend:local lacked app.demo_seed, so demo-seed exited 1.
     r, calls = _run_reset(tmp_path, fail_on="up")
     assert calls[0] == "compose build", calls
-    assert calls.index("compose build") < calls.index("compose down")
+    assert calls.index("compose build") < calls.index("compose --profile warm down --remove-orphans")
 
 
 def test_reset_build_failure_leaves_the_running_stack_alone(tmp_path: Path) -> None:
@@ -340,7 +348,7 @@ def test_reset_prints_one_shot_and_backend_logs_before_the_trap_takes_the_stack_
     assert len(logs) == 4, calls
     for svc in ("demo-seed", "demo-warm", "notes-mount-init", "fastapi-backend"):
         assert f"LOGS-OF --profile warm logs --no-color --tail 80 {svc}" in r.stderr, svc
-    assert calls[-1] == "compose down" and max(logs) == len(calls) - 2, calls
+    assert calls[-1] == "compose --profile warm down --remove-orphans" and max(logs) == len(calls) - 2, calls
 
 
 def test_reset_stops_the_macro_sidecar_after_the_warm_and_keeps_the_warm_status(tmp_path: Path) -> None:
@@ -354,14 +362,15 @@ def test_reset_warm_failure_still_stops_the_sidecar_and_does_not_take_the_stack_
     r, calls = _run_reset(tmp_path, fail_on="never")
     assert r.returncode == 3
     assert calls[-1] == "compose --profile warm rm -sf openbb-data", calls
-    assert calls.count("compose down") == 1, calls  # only the planned teardown; the stack stays up
+    assert calls.count("compose --profile warm down --remove-orphans") == 1, calls  # only the planned teardown; the stack stays up
 
 
-def _warm_stack(tmp_path: Path, fail_warm: bool) -> tuple[subprocess.CompletedProcess, list[str]]:
+def _warm_stack(tmp_path: Path, fail_warm: bool, preflight_fails: bool = False) -> tuple[subprocess.CompletedProcess, list[str]]:
     demo = tmp_path / "stack" / "deploy" / "demo"
     demo.mkdir(parents=True)
     (demo / "warm-demo.sh").write_text((DEMO / "warm-demo.sh").read_text())
     calls = tmp_path / "calls.log"
+    (demo / "preflight-demo.sh").write_text('#!/bin/sh\necho preflight >> "%s"\nexit %d\n' % (calls, 1 if preflight_fails else 0))
     (demo / "compose.sh").write_text('#!/bin/sh\necho "compose $*" >> "%s"\ncase "$*" in *"run --rm demo-warm"*) exit %d;; esac\nexit 0\n'
                                      % (calls, 3 if fail_warm else 0))
     for f in demo.iterdir():
@@ -374,4 +383,36 @@ def _warm_stack(tmp_path: Path, fail_warm: bool) -> tuple[subprocess.CompletedPr
 def test_warm_script_always_stops_the_sidecar_and_returns_the_warm_status(tmp_path: Path, fail: bool, rc: int) -> None:
     r, calls = _warm_stack(tmp_path, fail)
     assert r.returncode == rc, r.stderr
-    assert calls == ["compose --profile warm run --rm demo-warm", "compose --profile warm rm -sf openbb-data"]
+    assert calls == ["preflight", "compose --profile warm run --rm demo-warm", "compose --profile warm rm -sf openbb-data"]
+
+
+def test_warm_script_runs_preflight_first_and_does_not_warm_on_a_failure(tmp_path: Path) -> None:
+    r, calls = _warm_stack(tmp_path, fail_warm=False, preflight_fails=True)
+    assert r.returncode != 0 and calls == ["preflight"], calls
+
+
+@pytest.mark.parametrize("script", ["warm", "reset"])
+def test_a_killed_script_still_stops_the_sidecar(tmp_path: Path, script: str) -> None:
+    """SIGTERM to the process group while the warm runs (stub compose blocks) must still remove openbb-data."""
+    import signal
+    import time
+
+    if script == "warm":
+        _warm_stack(tmp_path, fail_warm=False)  # lays out the stack; re-run below with a blocking stub
+        demo = tmp_path / "stack" / "deploy" / "demo"
+        cmd, env = [str(demo / "warm-demo.sh")], os.environ
+    else:
+        sh, bindir = _reset_stack(tmp_path, fail_on="never")
+        demo, cmd, env = sh.parent, [str(sh)], {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}"}
+    calls = tmp_path / "calls.log"
+    calls.write_text("")
+    (demo / "compose.sh").write_text('#!/bin/sh\necho "compose $*" >> "%s"\ncase "$*" in *exec*) echo 403;; *"run --rm demo-warm"*) exec sleep 30;; esac\nexit 0\n' % calls)
+    p = subprocess.Popen(cmd, env=env, stderr=subprocess.DEVNULL, start_new_session=True)
+    for _ in range(100):
+        if "run --rm demo-warm" in calls.read_text():
+            break
+        time.sleep(0.1)
+    os.killpg(p.pid, signal.SIGTERM)  # like systemd: the whole group, so the blocked child dies and the trap runs
+    p.wait(timeout=20)
+    assert p.returncode != 0
+    assert calls.read_text().splitlines()[-1] == "compose --profile warm rm -sf openbb-data"

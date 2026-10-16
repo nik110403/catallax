@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -129,15 +130,48 @@ class CalendarData(BaseModel):
     needs_key: bool  # true when no FRED key is configured (calendar is FRED-only)
 
 
+# Upstream data is untrusted: bound what reaches Redis so a hostile or broken upstream cannot
+# grow the cache or poison it with a copy that no longer validates.
+_MAX_STR = 200
+_MAX_LIST = 5000  # longest legitimate list is ~2y of daily spreads (520) / a multi-decade series
+_MAX_PAYLOAD_BYTES = 512 * 1024
+_API_KEY_RE = re.compile(r"api_key=[^&\s]+")
+
+
+def _redact(text: object) -> str:
+    """Strip FRED `api_key=...` query values from text that reaches a log."""
+    return _API_KEY_RE.sub("api_key=***", str(text))
+
+
+def _bound(value: Any) -> Any:
+    """Truncate over-long strings and lists in a dumped model (recursive)."""
+    if isinstance(value, str):
+        return value[:_MAX_STR]
+    if isinstance(value, list):
+        return [_bound(v) for v in value[-_MAX_LIST:]]
+    if isinstance(value, dict):
+        return {k: _bound(v) for k, v in value.items()}
+    return value
+
+
 _STALE_WARN = "live source returned no data; showing the last good result"
+
+
+def _finite_or_none(v: Any) -> float | None:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
 
 
 def _as_pct(v: Any) -> float | None:
     """OpenBB rates arrive as fractions (0.0438) → percent (4.38)."""
     try:
-        return round(float(v) * 100, 4)
+        out = round(float(v) * 100, 4)
     except (TypeError, ValueError):
         return None
+    return out if math.isfinite(out) else None
 
 
 class MacroAdapter:
@@ -182,7 +216,7 @@ class MacroAdapter:
                 detail = resp.json().get("detail")
             except Exception:
                 detail = resp.text[:200]
-            logger.warning("openbb %s -> %s: %s", path, resp.status_code, detail)
+            logger.warning("openbb %s -> %s: %s", path, resp.status_code, _redact(detail))
             raise UpstreamError(f"OpenBB request failed for {path}")
         body = resp.json()
         results = body.get("results") if isinstance(body, dict) else None
@@ -214,9 +248,14 @@ class MacroAdapter:
                     logger.debug("macro stale deserialise failed (%s): %s", cache_key, exc)
             guard("macro", self.settings)
         data = await builder()
+        data = type(data).model_validate(_bound(data.model_dump(mode="json")))
         if not is_empty(data):
             try:
                 payload = data.model_dump_json()
+                if len(payload) > _MAX_PAYLOAD_BYTES:
+                    logger.warning("macro cache skipped for %s: %d bytes over the %d cap",
+                                   cache_key, len(payload), _MAX_PAYLOAD_BYTES)
+                    return data, False, False
                 await self.redis.set(cache_key, payload, ex=self.ttl)
                 await self.redis.set(f"{cache_key}:stale", payload, ex=self._STALE_TTL)
             except Exception as exc:  # caching is best-effort
@@ -253,6 +292,11 @@ class MacroAdapter:
                 if rate is None:
                     continue
                 years = r.get("maturity_years") or _LABEL_YEARS.get(label, 0.0)
+                try:
+                    if not math.isfinite(float(years)):
+                        continue
+                except (TypeError, ValueError):
+                    continue
                 pts.append(
                     CurvePoint(
                         maturity=_PRETTY_MATURITY.get(label, label or "?"),
@@ -365,7 +409,7 @@ class MacroAdapter:
                                 root=root,
                                 label=_INDICATOR_LABELS.get(root, root),
                                 country=c,
-                                value=(float(r["value"]) if r.get("value") is not None else None),
+                                value=_finite_or_none(r.get("value")),
                                 date=r.get("date"),
                                 transform=transform,
                             )
@@ -414,6 +458,8 @@ class MacroAdapter:
                         if val is None:
                             continue
                         try:
+                            if not math.isfinite(float(val)):
+                                continue
                             pts.append(MacroPoint(date=str(r["date"]), value=float(val)))
                         except (TypeError, ValueError):
                             continue
@@ -436,7 +482,7 @@ class MacroAdapter:
                 pts = [
                     MacroPoint(date=str(r.get("date")), value=float(r["value"]))
                     for r in rows
-                    if (r.get("country") or "").lower() == wanted and r.get("value") is not None
+                    if (r.get("country") or "").lower() == wanted and _finite_or_none(r.get("value")) is not None
                 ]
                 pts.sort(key=lambda p: p.date)
                 unit = "% YoY" if transform == "toya" else "%"
@@ -513,7 +559,7 @@ class MacroAdapter:
                 # httpx exception text includes the full URL (and the key) — sanitize.
                 logger.warning(
                     "fred releases/dates failed: %s",
-                    re.sub(r"api_key=[^&\s]+", "api_key=***", str(exc)),
+                    _redact(exc),
                 )
             events: list[CalendarEvent] = []
             seen: set[tuple[str | None, str]] = set()

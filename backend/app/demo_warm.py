@@ -288,6 +288,14 @@ async def warm(redis: Redis, settings: Settings) -> tuple[int, int, int]:
     return ok, core_failed, optional_failed
 
 
+def _configure_logging() -> None:
+    """INFO for the job, but not for httpx/httpcore: their request lines carry full URLs and
+    MacroAdapter.calendar() puts the FRED key in the query string."""
+    logging.basicConfig(level=logging.INFO)
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
 async def _main() -> int:
     # Override BEFORE the first get_settings() so every code path sees live mode.
     os.environ["UPSTREAM_MODE"] = "live"
@@ -305,5 +313,5 @@ async def _main() -> int:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    _configure_logging()
     sys.exit(asyncio.run(_main()))

@@ -10,8 +10,12 @@ DC="$HERE/compose.sh"
 exec 9>"$STACK/.demo-lock"
 flock -w 600 9 || { echo "warm-demo: could not take $STACK/.demo-lock (reset or warm still running)" >&2; exit 1; }
 
-rc=0
-"$DC" --profile warm run --rm demo-warm || rc=$?
-# Always stop the sidecar, also after a failed warm; its own failure must not mask the warm status.
-"$DC" --profile warm rm -sf openbb-data || echo "warm-demo: could not stop openbb-data" >&2
-exit "$rc"
+# Same checks as the reset: a config that drifted since the last preflight must not run the warm.
+"$HERE/preflight-demo.sh"
+
+# Stop the sidecar however this ends (warm failure, kill); its own failure never masks the status.
+cleanup() { "$DC" --profile warm rm -sf openbb-data || true; }
+trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+"$DC" --profile warm run --rm demo-warm

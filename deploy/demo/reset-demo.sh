@@ -48,12 +48,19 @@ cleanup() {
       "$DC" --profile warm logs --no-color --tail 80 "$svc" >&2 || true
     done
     echo "reset-demo: failed (exit $rc) before the read-only check passed; taking the stack down" >&2
-    "$DC" down || true
+    "$DC" --profile warm down --remove-orphans || true  # also takes the openbb-data sidecar down
+  else
+    # Whatever happened, never leave the macro sidecar (key, memory, egress) running.
+    "$DC" --profile warm rm -sf openbb-data || true
   fi
 }
 trap cleanup EXIT
+# A kill must run cleanup too (bash does not reliably run the EXIT trap on TERM/INT).
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
-"$DC" down
+# --profile warm / --remove-orphans: a sidecar left by an earlier killed run cannot block removing the network.
+"$DC" --profile warm down --remove-orphans
 # Only the two stateful volumes; images and the rest are untouched.
 # A volume that never existed is fine; one that survives `rm` is a failed wipe
 # (the trap then takes the stack down).
@@ -85,9 +92,7 @@ LOCKED=1
 
 # Redis and postgres were wiped: refill caches and daily bars so the demo is
 # not empty until the next timer tick.
-# demo-warm starts the openbb-data sidecar (macro step); stop it again whatever the outcome.
-rc=0
-"$DC" --profile warm run --rm demo-warm || rc=$?
-"$DC" --profile warm rm -sf openbb-data || echo "reset-demo: could not stop openbb-data" >&2
-[ "$rc" -eq 0 ] || exit "$rc"
+# demo-warm starts the openbb-data sidecar (macro step); the EXIT trap stops it again
+# whatever the outcome, and a failed warm leaves the (read-only) stack up.
+"$DC" --profile warm run --rm demo-warm
 echo "reset-demo: done"

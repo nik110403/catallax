@@ -150,8 +150,17 @@ for sname, svc in services.items():
         bad.append(L("must be on macro-net only, got %s" % sorted(nets)))
     if sname == "demo-warm" and nets != {"default", "macro-net"}:
         bad.append(L("must be on default and macro-net, got %s" % sorted(nets)))
-    if sname == "openbb-data" and svc.get("ports"):
-        bad.append(L("publishes a host port"))
+    if sname == "openbb-data":
+        if svc.get("ports"):
+            bad.append(L("publishes a host port"))
+        # The only service with open egress: bound its process count and keep it non-root.
+        try:
+            if int(svc.get("pids_limit") or 0) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            bad.append(L("no pids_limit"))
+        if str(svc.get("user", "")).split(":")[0] in ("", "0", "root"):
+            bad.append(L("must run as a non-root user"))
     # The demo FRED key: only openbb-data and demo-warm may hold it. Any FRED-named
     # variable on another service must render empty (env_file inlines the stack env file).
     if sname not in FRED_KEY_SERVICES:

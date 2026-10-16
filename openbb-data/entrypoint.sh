@@ -6,10 +6,13 @@
 set -e
 
 if [ -n "${OPENBB_FRED_API_KEY}" ]; then
-  mkdir -p /root/.openbb_platform
+  # $HOME, not /root: the hardened demo runs this image as a non-root user with HOME=/tmp.
+  CRED_DIR="${HOME:-/root}/.openbb_platform"
+  mkdir -p "$CRED_DIR"
   # Build the JSON with python (not shell string interpolation) so a key with a
   # quote/backslash/percent can't corrupt the file or trigger printf expansion.
-  python -c 'import json,os;json.dump({"credentials":{"fred_api_key":os.environ["OPENBB_FRED_API_KEY"]}},open("/root/.openbb_platform/user_settings.json","w"))'
+  export CRED_DIR
+  python -c 'import json,os;json.dump({"credentials":{"fred_api_key":os.environ["OPENBB_FRED_API_KEY"]}},open(os.environ["CRED_DIR"]+"/user_settings.json","w"))'
   echo "openbb-data: FRED key configured"
 else
   echo "openbb-data: no FRED key — keyless providers only (federal_reserve/ecb/econdb)"
