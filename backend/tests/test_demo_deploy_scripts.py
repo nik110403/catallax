@@ -38,11 +38,14 @@ def _render() -> dict:
             "nginx": _svc(
                 cap_add=["CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"],
                 ports=[{"host_ip": LAN, "target": 80, "published": "8190"}],
+                volumes=[{"type": "bind", "source": str(DEMO / "nginx-templates"),
+                          "target": "/etc/nginx/templates", "read_only": True}],
+                environment={"DEMO_BIND_ADDR": LAN, "DEMO_TRUSTED_PROXY": PROXY,
+                             "NGINX_ENVSUBST_OUTPUT_DIR": "/etc/nginx/demo-env"},
             ),
             "fastapi-backend": backend,
             "redis": _svc(cap_add=["CHOWN", "SETGID", "SETUID"]),
         },
-        "configs": {"demo_trusted_proxy": {"content": PROXY + " 1;"}},
     }
 
 
@@ -69,14 +72,26 @@ def test_preflight_still_trips_on_the_lan_address_under_another_key(tmp_path: Pa
 
 
 def test_preflight_trusted_proxy_must_be_narrow_cidr(tmp_path: Path) -> None:
-    for content in ("0.0.0.0/0 1;", "198.51.100.0/4 1;", "not-a-cidr 1;"):
+    for value in ("0.0.0.0/0", "198.51.100.0/4", "not-a-cidr", "198.51.100.9/32 1;", ""):
         render = _render()
-        render["configs"]["demo_trusted_proxy"]["content"] = content
+        render["services"]["nginx"]["environment"]["DEMO_TRUSTED_PROXY"] = value
         r = _run_preflight(tmp_path, render)
-        assert r.returncode != 0 and "demo_trusted_proxy" in r.stderr, content
+        assert r.returncode != 0 and "DEMO_TRUSTED_PROXY" in r.stderr, value
     render = _render()
-    del render["configs"]
-    assert _run_preflight(tmp_path, render).returncode != 0
+    del render["services"]["nginx"]["environment"]["DEMO_TRUSTED_PROXY"]
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and "DEMO_TRUSTED_PROXY" in r.stderr
+
+
+def test_preflight_requires_template_mount_and_output_dir(tmp_path: Path) -> None:
+    render = _render()
+    render["services"]["nginx"]["volumes"] = []
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and "template" in r.stderr
+    render = _render()
+    del render["services"]["nginx"]["environment"]["NGINX_ENVSUBST_OUTPUT_DIR"]
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and "NGINX_ENVSUBST_OUTPUT_DIR" in r.stderr
 
 
 @pytest.mark.parametrize("opts", [

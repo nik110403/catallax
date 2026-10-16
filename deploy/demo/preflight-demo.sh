@@ -172,16 +172,24 @@ for svc in (scan.get("services") or {}).values():
     elif isinstance(env, list):
         svc["environment"] = [e for e in env if str(e).split("=", 1)[0] not in TP_ENV]
 # DEMO_TRUSTED_PROXY (the edge proxy CIDR) is private by nature: it reaches the render
-# via env_file and via the nginx `configs` content. Validate its shape, then exempt
-# exactly those carriers from the scan.
-tp = (scan.get("configs") or {}).get("demo_trusted_proxy")
-if tp is None:
-    bad.append("config demo_trusted_proxy missing (nginx would have no trusted-proxy set)")
+# via env_file and via the nginx service environment. Validate the shape of the nginx value
+# (required, fail closed), then exempt the key by name only (popped above).
+ngx = services.get("nginx") or {}
+nenv = ngx.get("environment") or {}
+if isinstance(nenv, list):
+    nenv = dict(str(e).split("=", 1) if "=" in str(e) else (str(e), "") for e in nenv)
+tp = str(nenv.get("DEMO_TRUSTED_PROXY", ""))
+if not tp:
+    bad.append("nginx: environment DEMO_TRUSTED_PROXY missing (nginx would have no trusted-proxy set)")
 else:
-    m = re.fullmatch(r"(\d{1,3}(?:\.\d{1,3}){3})(?:/(\d{1,2}))? 1;\n?", str(tp.get("content", "")))
-    if not m or any(int(o) > 255 for o in m.group(1).split(".")) or (m.group(2) and int(m.group(2)) < 8):
-        bad.append("config demo_trusted_proxy is not a single IPv4 CIDR no broader than /8")
-    tp.pop("content", None)
+    m = re.fullmatch(r"(\d{1,3}(?:\.\d{1,3}){3})(?:/(\d{1,2}))?", tp)
+    if not m or any(int(o) > 255 for o in m.group(1).split(".")) or (m.group(2) and (int(m.group(2)) < 8 or int(m.group(2)) > 32)):
+        bad.append("nginx: DEMO_TRUSTED_PROXY is not a single IPv4 CIDR no broader than /8")
+if nenv.get("NGINX_ENVSUBST_OUTPUT_DIR") != "/etc/nginx/demo-env":
+    bad.append("nginx: NGINX_ENVSUBST_OUTPUT_DIR must be /etc/nginx/demo-env")
+if not any(isinstance(v, dict) and v.get("target") == "/etc/nginx/templates" and v.get("type") == "bind"
+           for v in ngx.get("volumes") or []):
+    bad.append("nginx: the envsubst template bind mount at /etc/nginx/templates is missing")
 blob = json.dumps(scan)
 markers = []
 with open(os.environ["DEMO_DENY_MARKERS_FILE"]) as fh:

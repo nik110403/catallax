@@ -11,7 +11,7 @@ calls an upstream data source on a visitor's request.
 | `compose.demo.yml` | Overlay on `docker-compose.yml`: own project `catallax-demo`, memory/CPU limits, read-only root filesystems, `no-new-privileges`, `cap_drop: ALL`, heavy services and fava switched off (profile `never`), the warm job |
 | `nginx.demo.conf` | Demo nginx: 20 r/s (burst 40) limit on `/api/`, at most 2 price websockets per client, 405 for non-read methods outside `/api/`, 404 for `/fava/`, upstreams re-resolved per request (a recreated container never leaves a stale IP) |
 | `compose.sh` | Compose wrapper with the project name and file order pinned |
-| `preflight-demo.sh` | Fails closed on external networks, outside bind mounts, privileged, docker socket, all-interface ports, missing limits or `read_only`, unlisted `cap_add`, any `security_opt` other than exactly `no-new-privileges:true` (so `unconfined`, `label:disable` and the like), a malformed or broad `DEMO_TRUSTED_PROXY`, a wrong demo flag, and any private marker from `DEMO_DENY_MARKERS_FILE`. The values of `DEMO_BIND_ADDR` and `DEMO_TRUSTED_PROXY` (which compose inlines into services that load the stack env file) are exempt by key name only; the same value under any other key still fails |
+| `preflight-demo.sh` | Fails closed on external networks, outside bind mounts, privileged, docker socket, all-interface ports, missing limits or `read_only`, unlisted `cap_add`, any `security_opt` other than exactly `no-new-privileges:true` (so `unconfined`, `label:disable` and the like), a missing, malformed or broad nginx `DEMO_TRUSTED_PROXY` (or a missing template mount), a wrong demo flag, and any private marker from `DEMO_DENY_MARKERS_FILE`. The values of `DEMO_BIND_ADDR` and `DEMO_TRUSTED_PROXY` (which compose inlines into services that load the stack env file) are exempt by key name only; the same value under any other key still fails |
 | `reset-demo.sh` + `catallax-demo-reset.{service,timer}` | Nightly 03:30 reset (read-only throughout, never seeded) |
 | `catallax-demo-warm.{service,timer}` | Cache warm job schedule |
 | `traefik-catallax-demo.yml.tmpl` | Edge proxy routers, method allowlist, rate limiters |
@@ -102,8 +102,10 @@ peer is inside `DEMO_TRUSTED_PROXY` (stack env file; Traefik's address as nginx
 sees it, a single IPv4 CIDR no broader than /8, default `127.0.0.1/32` = nobody
 useful). Every other peer, such as a LAN host or anything reaching the port
 without Traefik, is keyed on its own socket address, so a forged header cannot
-buy a fresh rate bucket or extra websocket slots. `compose.demo.yml` renders the
-value into `/etc/nginx/demo-trusted-proxy.conf` (a compose `configs` entry). The
+buy a fresh rate bucket or extra websocket slots. `compose.demo.yml` passes the
+value as an nginx environment variable; the image's envsubst entrypoint renders
+`nginx-templates/demo-trusted-proxy.conf.template` into the tmpfs
+`/etc/nginx/demo-env/` (a compose `configs` entry cannot be used with `read_only`). The
 LAN port must still never be forwarded on your router.
 
 ## Memory budget

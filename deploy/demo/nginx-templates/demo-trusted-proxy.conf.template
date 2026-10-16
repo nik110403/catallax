@@ -1,0 +1,2 @@
+# rendered by the nginx image envsubst entrypoint into /etc/nginx/demo-env/
+${DEMO_TRUSTED_PROXY} 1;

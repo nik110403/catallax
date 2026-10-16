@@ -10,12 +10,6 @@ x-hardened: &hardened
   cap_drop: [ALL]
   read_only: true
 
-configs:
-  # The one peer whose Cf-Connecting-Ip nginx believes (Traefik's address, a CIDR).
-  # The default trusts nobody useful (loopback is not reachable from the LAN).
-  demo_trusted_proxy:
-    content: "${DEMO_TRUSTED_PROXY:-127.0.0.1/32} 1;"
-
 networks:
   # Explicit subnet: a busy host can run out of Docker's predefined address
   # pools ("all predefined address pools have been fully subnetted"). Pick a
@@ -46,10 +40,15 @@ services:
     volumes:
       # Same target as the base file's nginx.conf mount: this one replaces it.
       - ./deploy/demo/nginx.demo.conf:/etc/nginx/nginx.conf:ro,z
-    configs:
-      - source: demo_trusted_proxy
-        target: /etc/nginx/demo-trusted-proxy.conf
-    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+      # The official image's envsubst entrypoint renders these templates at start.
+      - ./deploy/demo/nginx-templates:/etc/nginx/templates:ro,z
+    environment:
+      # The one peer whose Cf-Connecting-Ip nginx believes (Traefik's address, a CIDR).
+      # The default trusts nobody useful (loopback is not reachable from the LAN).
+      DEMO_TRUSTED_PROXY: "${DEMO_TRUSTED_PROXY:-127.0.0.1/32}"
+      # read_only rootfs: render into a tmpfs, not /etc/nginx/conf.d.
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/demo-env
+    tmpfs: [/var/cache/nginx, /var/run, /tmp, /etc/nginx/demo-env]
 
   react-frontend:
     <<: *hardened
