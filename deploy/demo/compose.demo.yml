@@ -16,6 +16,15 @@ configs:
   demo_trusted_proxy:
     content: "${DEMO_TRUSTED_PROXY:-127.0.0.1/32} 1;"
 
+networks:
+  # Explicit subnet: a busy host can run out of Docker's predefined address
+  # pools ("all predefined address pools have been fully subnetted"). Pick a
+  # /24 that `docker network inspect` shows unused on the deploy host.
+  default:
+    ipam:
+      config:
+        - subnet: "${DEMO_SUBNET:?set DEMO_SUBNET in the stack env file to a free /24}"
+
 services:
   nginx:
     <<: *hardened

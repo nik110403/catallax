@@ -36,7 +36,7 @@ Needs Docker Compose 2.24.4 or newer (`!override` in `compose.demo.yml`). `compo
 ```bash
 git clone <public repo url> catallax-demo && cd catallax-demo
 git checkout <pushed, scanned commit>
-cp deploy/demo/demo.env.example .env && chmod 600 .env   # edit passwords and DEMO_BIND_ADDR
+cp deploy/demo/demo.env.example .env && chmod 600 .env   # edit passwords, DEMO_BIND_ADDR and DEMO_SUBNET (a /24 no other Docker network uses)
 # One regex per line of private host/network markers; keep that file OUTSIDE the clone and
 # point DEMO_DENY_MARKERS_FILE (in the stack env file) at it. The preflight fails closed without it.
 deploy/demo/preflight-demo.sh
