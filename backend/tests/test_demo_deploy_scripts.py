@@ -34,7 +34,7 @@ def _render() -> dict:
     })
     return {
         "name": "catallax-demo",
-        "networks": {"default": {"ipam": {"config": [{"subnet": "10.200.0.0/24"}]}}},
+        "networks": {"default": {"ipam": {"config": [{"subnet": "172.30.200.0/24"}]}}},
         "services": {
             "nginx": _svc(
                 cap_add=["CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"],
@@ -172,10 +172,10 @@ def test_preflight_requires_demo_env_tmpfs(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("config,msg", [
     ([{"subnet": "198.51.100.0/24"}], "overlaps"),
-    ([{"subnet": "10.0.0.0/8"}], "/16 to /28"),
-    ([{"subnet": "10.200.0.0/30"}], "/16 to /28"),
+    ([{"subnet": "172.16.0.0/12"}], "/16 to /28"),
+    ([{"subnet": "172.30.200.0/30"}], "/16 to /28"),
     ([{"subnet": "fd00::/64"}], "/16 to /28"),
-    ([{"subnet": "10.200.0.0/24"}, {"subnet": "10.201.0.0/24"}], "exactly one"),
+    ([{"subnet": "172.30.200.0/24"}, {"subnet": "172.30.201.0/24"}], "exactly one"),
     ([], "exactly one"),
 ])
 def test_preflight_network_subnet_rules(tmp_path: Path, config: list, msg: str) -> None:
