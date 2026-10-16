@@ -462,7 +462,11 @@ class MacroAdapter:
         if not self.settings.openbb_fred_api_key:
             # No key can still mean a cached/imported calendar (demo handoff): serve it first.
             for suffix, stale in (("", False), (":stale", True)):
-                raw = await self.redis.get(f"macro:calendar{suffix}")
+                try:
+                    raw = await self.redis.get(f"macro:calendar{suffix}")
+                except Exception as exc:
+                    logger.debug("macro calendar cache read failed: %s", exc)
+                    break
                 if raw is None:
                     continue
                 try:

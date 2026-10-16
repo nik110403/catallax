@@ -151,6 +151,33 @@ async def test_old_file_warns_but_imports(tmp_path: Path, caplog: pytest.LogCapt
     with caplog.at_level(logging.WARNING, logger="catallax.macro_import"):
         n = await import_macro(r, 60, _file(tmp_path, GOOD, age=timedelta(hours=49)))
     assert n == len(GOOD) and any("stale" in x.getMessage() for x in caplog.records)
+    # an old export never lands under the fresh key: the UI must show the stale label
+    assert not any(not k.endswith(":stale") for k in r.kv) and "macro:yc:US:stale" in r.kv
+    cal = await MacroAdapter(r, _settings()).calendar()
+    assert cal.stale
+
+
+async def test_deep_json_and_bad_ttl_do_not_crash(tmp_path: Path) -> None:
+    r = _Redis()
+    deep = tmp_path / "deep.json"
+    deep.write_text("[" * 200000)
+    assert await import_macro(r, 60, str(deep)) == 0
+    await import_macro(r, 0, _file(tmp_path, {"macro:calendar": GOOD["macro:calendar"]}))
+    assert "macro:calendar" not in r.kv and "macro:calendar:stale" in r.kv
+
+
+def test_series_id_is_length_bounded() -> None:
+    assert KEY_RE.fullmatch("macro:series:" + "A" * 64 + ":toya")
+    assert not KEY_RE.fullmatch("macro:series:" + "A" * 65 + ":toya")
+
+
+async def test_calendar_survives_a_redis_read_error() -> None:
+    class _Boom:
+        async def get(self, key):  # noqa: ANN001
+            raise ConnectionError("down")
+
+    cal = await MacroAdapter(_Boom(), _settings()).calendar()
+    assert cal.data.needs_key
 
 
 async def test_warm_step_is_optional(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

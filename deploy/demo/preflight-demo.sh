@@ -111,7 +111,11 @@ for sname, svc in services.items():
         if v.get("type") == "bind" and not inside(src):
             # The ONE exception: the macro handoff dir, read-only at /import, on demo-warm.
             if (sname == "demo-warm" and v.get("target") == "/import" and v.get("read_only") is True
-                    and os.path.isabs(src) and not handoff_seen):
+                    and re.fullmatch(r"/srv/[A-Za-z0-9._-]+", src) and src not in ("/srv/.", "/srv/..")
+                    and os.path.normpath(src) == src
+                    and not (set(v) - {"type", "source", "target", "read_only", "bind"})
+                    and not (set(v.get("bind") or {}) - {"create_host_path"})
+                    and not handoff_seen):
                 handoff_seen = True
             else:
                 bad.append(L("bind mount %r is outside the stack dir" % src))
