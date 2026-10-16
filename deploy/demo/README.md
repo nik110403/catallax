@@ -62,7 +62,16 @@ for it (`service_completed_successfully`). Because the reset wipes the database
 and then runs `up --wait`, the seed is restored nightly with no extra step. It
 writes ORM rows directly (never through a writable API), validates the JSON
 blobs with `BacktestReport` / `FactorReport`, dates rows relative to today, is
-idempotent, and refuses to run unless `DEMO_MODE`, `DEMO_READONLY` and `DEMO_SAMPLE_READS` are all true and the seeded tables hold nothing but its own rows (so it cannot touch a private database).
+idempotent, serialised by a Postgres advisory lock, and refuses to run unless
+`DEMO_MODE`, `DEMO_READONLY` and `DEMO_SAMPLE_READS` are all true and every seeded table is
+empty (or, on a rerun, still holds exactly the seed's own rows). It then writes a one-row
+`demo_seed_marker` recording the row counts. At startup the backend re-verifies the marker,
+the exact seed keys and the counts before serving sample rows; if anything differs it logs an
+error and serves empty reads instead (fail closed). So a database that already holds data
+is never seeded or served as a demo, the check is one of identity (not just a flag), and
+the settings validator rejects `DEMO_SAMPLE_READS` without `DEMO_MODE` and `DEMO_READONLY`.
+It is a guard, not a privilege boundary: the seed still runs with the application's database
+role, and a database that was empty of seeded tables at first seed is trusted as the demo.
 
 Seeded (all obviously synthetic; news links point at example.com): 2 backtests,
 1 lab factor study, 3 journal entries, 3 notes, 5 watchlist symbols, user signals
@@ -76,7 +85,7 @@ this data instead of returning their hard-coded empty result (`DEMO_MODE` withou
 the local demo, still returns empty). Writes stay refused by the middleware and
 the edge.
 
-In the demo, signal grades ignore `refresh` and pin horizon/quantiles to the defaults, and Redis is capped at 48 MB with `allkeys-lru`, so visitors cannot force recomputes or grow the cache.
+In the demo, signal grades ignore `refresh` and pin horizon/quantiles to the defaults, and Redis is capped at 32 MB with `volatile-ttl` (the measured warm set is 190 keys / 9 MB; short-TTL keys are evicted before the long-lived stale copies; see the comment in `compose.demo.yml`), so visitors cannot force recomputes or grow the cache.
 
 Still empty: report narration (the demo report path is synthetic and needs a
 rewrite, not rows), the PDF (404 in demo), algo strategies, and anything a visitor

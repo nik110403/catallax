@@ -1160,3 +1160,18 @@ class SourceCursor(Base):
     events_rejected: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default="0"
     )
+
+
+class DemoSeedMarker(Base):
+    """One row, written only by `app.demo_seed` on a database that was empty of every
+    seeded table. Its presence (and the per-table row counts it records) is what lets the
+    hosted demo backend trust that the DB holds only synthetic sample rows."""
+
+    __tablename__ = "demo_seed_marker"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_demo_seed_marker_single"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    counts: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    seeded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

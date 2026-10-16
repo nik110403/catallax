@@ -101,7 +101,16 @@ services:
     <<: *hardened
     cap_add: [CHOWN, SETGID, SETUID]
     # Bound the cache under the container limit: public visitors cannot grow it past this.
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "48mb", "--maxmemory-policy", "allkeys-lru"]
+    # Sizing (measured 2026-10-16: a full `demo_warm` into an empty Redis = 190 keys,
+    # used_memory 8.7 MB, peak 9.0 MB, RSS 15 MB; every key carries a TTL, the stale copies
+    # the cache-only backend depends on last 2 days (quotes) / 7 days (macro, markets, news)).
+    # Cache-only mode never refetches, so an evicted warm key stays gone until the next warm.
+    # 32 MB is 3.5x the warm set and keeps RSS (fragmentation ~1.8x at this size) well under
+    # the 64m limit; 48 MB left too little margin for RSS spikes. volatile-ttl evicts the
+    # SHORTEST-TTL keys first (rate-limit counters, short caches), so the long-lived stale
+    # copies are the last to go; allkeys-lru would evict them on mere idleness. All warm
+    # keys have a TTL, so volatile-ttl can always make room. Total stack budget unchanged.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "32mb", "--maxmemory-policy", "volatile-ttl"]
     mem_limit: 64m
     cpus: 0.5
     tmpfs: [/tmp]

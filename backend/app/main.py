@@ -101,6 +101,10 @@ async def _ai_autoenrich_loop() -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_engine()
     init_redis()
+    if get_settings().demo_sample:
+        from app.demo_seed import verify_at_startup  # demo-only; fail closed to empty reads
+
+        await verify_at_startup(get_settings())
     breadth_task: asyncio.Task[None] | None = None
     if get_settings().breadth_autofetch_interval_seconds > 0:
         breadth_task = asyncio.create_task(_breadth_autopersist_loop())

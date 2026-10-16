@@ -2,7 +2,7 @@ from datetime import date
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -792,13 +792,32 @@ class Settings(BaseSettings):
             )
         return v
 
+    @model_validator(mode="after")
+    def _ck_demo_sample_reads(self) -> "Settings":
+        # Sample reads open DB-backed read routes: only legal on the hosted, read-only demo.
+        if self.demo_sample_reads and not (self.demo_mode and self.demo_readonly):
+            raise ValueError("DEMO_SAMPLE_READS requires DEMO_MODE and DEMO_READONLY")
+        return self
+
+    @property
+    def demo_sample(self) -> bool:
+        """The one predicate that opens sample reads: all three demo flags. (At startup
+        `app.demo_seed.verify_at_startup` clears demo_sample_reads if the DB is not a
+        verified seeded demo database: fail closed to empty reads.)"""
+        return self.demo_mode and self.demo_readonly and self.demo_sample_reads
+
+    @property
+    def demo_clamp(self) -> bool:
+        """Public-demo input clamps (no caller-chosen signal-grade cache keys)."""
+        return self.demo_readonly or self.demo_sample
+
     @property
     def demo_empty_reads(self) -> bool:
         """DEMO_MODE read gates (backtest/lab/journal/notes/algo/signals/watchlist)
-        return a hard-coded empty result unless DEMO_SAMPLE_READS opts in to serving
-        the synthetic rows `app.demo_seed` wrote. Writes stay refused by
-        DemoReadOnlyMiddleware either way."""
-        return self.demo_mode and not self.demo_sample_reads
+        return a hard-coded empty result unless the demo-sample predicate holds (mode AND
+        readonly AND sample reads) and serve the synthetic rows `app.demo_seed` wrote.
+        Writes stay refused by DemoReadOnlyMiddleware either way."""
+        return self.demo_mode and not self.demo_sample
 
     @property
     def news_feed_urls(self) -> list[str]:

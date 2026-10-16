@@ -6,12 +6,14 @@ sample: 2 backtests, 1 lab factor study, 3 journal entries, 3 notes, 5 watchlist
 user signals, one filled paper order with its fill/position/snapshots, a few news-intel rows.
 
 Safety: it REFUSES to run unless DEMO_MODE, DEMO_READONLY and DEMO_SAMPLE_READS are all true
-(only the hosted demo sets them) and it refuses when a seeded table holds rows that are not
-its own sample rows, so it can never write into (or on top of) a private database. Everything is synthetic: prices,
-curves and text are generated here or fixed sample text; links point at example.com.
+(only the hosted demo sets them), and it seeds only a database whose seeded tables are ALL
+empty. It then writes a one-row `demo_seed_marker` (migration 0016) recording the per-table
+row counts. The backend, at startup with sample reads configured, re-verifies marker + exact
+seed keys + counts and otherwise falls back to empty reads (fail closed). Everything is
+synthetic: prices, curves and text are generated here or fixed sample text; links point at
+example.com. A concurrent seed is serialised by a Postgres advisory lock.
 
-Idempotent: each product is written only when its marker row is absent
-(`ON CONFLICT DO NOTHING` on the natural keys), so a second run changes nothing. Dates are
+Idempotent: once the marker row exists a second run only re-verifies and changes nothing. Dates are
 relative to today. JSON result blobs are validated through the same pydantic models the
 read paths use (`BacktestReport`, `FactorReport`).
 """
@@ -26,7 +28,7 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +38,7 @@ from app.adapters.yahoo_symbols import to_yahoo_symbol
 from app.config import Settings, get_settings
 from app.db import dispose_engine, init_engine, session_scope
 from app.models import (
-    AlgoAccountSnapshot, AlgoFill, AlgoOrder, AlgoPosition, Backtest, JournalEntry,
+    AlgoAccountSnapshot, AlgoFill, AlgoOrder, AlgoPosition, Backtest, DemoSeedMarker, JournalEntry,
     LabRun, NewsIntelRow, Note, SignalRow, WatchlistItem,
 )
 
@@ -50,6 +52,8 @@ SAMPLE_NOTE = "Sample data: synthetic, generated for the public demo."
 SIGNAL_EQUITIES = ("AAPL", "MSFT", "NVDA", "IWDA.AS", "VWCE.DE")
 SIGNAL_CRYPTO = ("BTC", "ETH")
 SIGNAL_IDS = ("xs_mom_252_21", "xs_lowvol_63")
+_BACKTEST_NAMES = ("demo: momentum, monthly, top quintile", "demo: low-vol, monthly, long-short")
+_LOCK_KEY = 0x0C7D5EED  # pg_advisory_xact_lock key: serialises concurrent seeds
 ALGO_SYMBOL = "AAPL"  # a persona holding the warm job quotes
 
 
@@ -350,67 +354,122 @@ class ForeignRowsError(RuntimeError):
     """A seeded table holds rows the seed did not write: this is not a demo database."""
 
 
-async def check_demo_database(db: AsyncSession, markers: list[tuple[Any, Any]]) -> None:
-    """Every table must hold exactly its sample rows (or none): any other row means the
-    database is not a fresh/seeded demo one."""
-    for model, marker in markers:
-        total = (await db.execute(select(func.count()).select_from(model))).scalar_one()
-        own = (await db.execute(select(func.count()).select_from(model).where(marker))).scalar_one()
-        if total != own:
-            raise ForeignRowsError(f"{model.__tablename__} has {total - own} non-sample row(s)")
+# Tables the opened read routes serve. NewsIntelRow is deliberately NOT re-verified at
+# runtime: /intel/news is not gated and the enrichment job may append rows to it; it is
+# still required to be empty before the FIRST seed.
+_TABLES = (Backtest, LabRun, JournalEntry, Note, WatchlistItem, SignalRow,
+           AlgoOrder, AlgoFill, AlgoPosition, AlgoAccountSnapshot)
+_FIRST_SEED_TABLES = _TABLES + (NewsIntelRow,)
+
+
+def _markers(settings: Settings, today: date) -> list[tuple[Any, Any]]:
+    """Exact seed keys per table: a row counts as the seed's own only if it matches the
+    synthetic values written here (not merely a plausible symbol / reference signal id)."""
+    bts = [_job_id(n) for n in _BACKTEST_NAMES]
+    book = build_algo(today, float(settings.algo_starting_cash))
+    o, f, p = book["order"], book["fill"], book["position"]
+    return [
+        (Backtest, Backtest.job_id.in_(bts)),
+        (LabRun, LabRun.job_id == build_factor_run(today)["job_id"]),
+        (JournalEntry, JournalEntry.title.in_([j["title"] for j in build_journal(today)])),
+        (Note, Note.slug.in_([n["slug"] for n in build_notes(today)])),
+        (WatchlistItem, WatchlistItem.symbol.in_(WATCHLIST)),
+        (SignalRow, and_(
+            SignalRow.signal_id.in_(SIGNAL_IDS), SignalRow.symbol.in_(signal_symbols(settings)),
+            SignalRow.source == "yfinance", SignalRow.meta["sample"].astext == "true")),
+        (AlgoOrder, and_(
+            AlgoOrder.symbol == o["symbol"], AlgoOrder.side == o["side"], AlgoOrder.type == o["type"],
+            AlgoOrder.qty == o["qty"], AlgoOrder.status == o["status"], AlgoOrder.strategy_id.is_(None),
+            AlgoOrder.limit_price.is_(None), AlgoOrder.reason.is_(None))),
+        (AlgoFill, and_(
+            AlgoFill.symbol == f["symbol"], AlgoFill.price == f["price"], AlgoFill.qty == f["qty"],
+            AlgoFill.commission == f["commission"], AlgoFill.slippage_bps == f["slippage_bps"])),
+        (AlgoPosition, and_(
+            AlgoPosition.symbol == p["symbol"], AlgoPosition.qty == p["qty"], AlgoPosition.avg_cost == p["avg_cost"])),
+        # Snapshot dates are relative to the seed day, so they are pinned by the recorded
+        # row count only (plus the marker row itself).
+        (AlgoAccountSnapshot, AlgoAccountSnapshot.id > 0),
+    ]
+
+
+async def _count(db: AsyncSession, model: Any, *where: Any) -> int:
+    return (await db.execute(select(func.count()).select_from(model).where(*where))).scalar_one()
+
+
+async def verify_demo_database(db: AsyncSession, settings: Settings, today: date | None = None) -> None:
+    """The marker row exists and every served table holds EXACTLY the recorded seed rows
+    (count == recorded count == rows matching the exact seed keys). Raises ForeignRowsError."""
+    today = today or datetime.now(timezone.utc).date()
+    marker = (await db.execute(select(DemoSeedMarker).where(DemoSeedMarker.id == 1))).scalar_one_or_none()
+    if marker is None:
+        raise ForeignRowsError("no demo_seed_marker row: this database was never seeded by the demo seed")
+    for model, key in _markers(settings, today):
+        name = model.__tablename__
+        want = marker.counts.get(name)
+        total, own = await _count(db, model), await _count(db, model, key)
+        if want is None or total != want or own != want:
+            raise ForeignRowsError(f"{name}: {total} row(s), {own} exact seed row(s), {want} recorded")
+
+
+async def verify_at_startup(settings: Settings) -> None:
+    """Fail closed: when sample reads are configured but the DB is not a verified seeded
+    demo database, drop to empty reads (and say so) instead of serving private rows."""
+    if not settings.demo_sample:
+        return
+    try:
+        async with session_scope() as db:
+            await verify_demo_database(db, settings)
+    except Exception as exc:  # incl. missing table / DB down: never serve on doubt
+        logger.error("DEMO_SAMPLE_READS refused, serving empty reads: %s", exc)
+        settings.demo_sample_reads = False
+        return
+    logger.info("demo database verified: sample reads open")
 
 
 async def seed(db: AsyncSession, settings: Settings, today: date | None = None) -> dict[str, int]:
-    """Write every missing product; returns rows inserted per product (all 0 on a rerun)."""
+    """Write every product on a database with no seeded rows; returns rows inserted per
+    product (all 0 on a rerun, which re-verifies the database instead)."""
     today = today or datetime.now(timezone.utc).date()
-    done: dict[str, int] = {}
+    # Serialise concurrent seeds (released at commit/rollback).
+    await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_KEY})
+    labels = ("backtests", "lab_runs", "journal", "notes", "watchlist", "signals", "news_intel", "algo")
+    if (await db.execute(select(DemoSeedMarker.id))).first() is not None:
+        await verify_demo_database(db, settings, today)  # already seeded: must still be pure
+        return dict.fromkeys(labels, 0)
+    for model in _FIRST_SEED_TABLES:  # no marker: only a completely empty database qualifies
+        n = await _count(db, model)
+        if n:
+            raise ForeignRowsError(f"{model.__tablename__} holds {n} row(s) and the database has no seed marker")
+
     bts = [
-        build_backtest("demo: momentum, monthly, top quintile", "xs_mom_252_21", today, 11, False, 5, 0.0003, 0.010),
-        build_backtest("demo: low-vol, monthly, long-short", "xs_lowvol_63", today, 23, True, 3, 0.0002, 0.007),
+        build_backtest(_BACKTEST_NAMES[0], "xs_mom_252_21", today, 11, False, 5, 0.0003, 0.010),
+        build_backtest(_BACKTEST_NAMES[1], "xs_lowvol_63", today, 23, True, 3, 0.0002, 0.007),
     ]
     lab = build_factor_run(today)
-    journal, notes, news = build_journal(today), build_notes(today), build_news(today)
-    book = build_algo(today, float(settings.algo_starting_cash))["fill"]
-    await check_demo_database(db, [
-        (Backtest, Backtest.job_id.in_([b["job_id"] for b in bts])),
-        (LabRun, LabRun.job_id == lab["job_id"]),
-        (JournalEntry, JournalEntry.title.in_([j["title"] for j in journal])),
-        (Note, Note.slug.in_([n["slug"] for n in notes])),
-        (WatchlistItem, WatchlistItem.symbol.in_(WATCHLIST)),
-        (SignalRow, SignalRow.signal_id.in_(SIGNAL_IDS)),
-        (NewsIntelRow, NewsIntelRow.link.in_([n["link"] for n in news])),
-        (AlgoOrder, AlgoOrder.symbol == book["symbol"]),
-        (AlgoFill, AlgoFill.symbol == book["symbol"]),
-    ])
-
-    async def product(label: str, model: Any, marker: Any, rows: list[dict[str, Any]]) -> None:
-        if await _absent(db, model, marker):
-            await _insert(db, model, rows)
-            done[label] = len(rows)
-        else:
-            done[label] = 0
-
-    await product("backtests", Backtest, Backtest.job_id.in_([b["job_id"] for b in bts]), bts)
-    await product("lab_runs", LabRun, LabRun.job_id == lab["job_id"], [lab])
-    await product("journal", JournalEntry, JournalEntry.title.in_([j["title"] for j in journal]), journal)
-    await product("notes", Note, Note.slug.in_([n["slug"] for n in notes]), notes)
-    wl = build_watchlist()
-    await product("watchlist", WatchlistItem, WatchlistItem.symbol.in_(WATCHLIST), wl)
-    await product("signals", SignalRow, SignalRow.signal_id.in_(SIGNAL_IDS), build_signals(today, settings))
-    await product("news_intel", NewsIntelRow, NewsIntelRow.link.in_([n["link"] for n in news]), news)
-
+    news = build_news(today)
+    done: dict[str, int] = {}
+    for label, model, rows in (
+        ("backtests", Backtest, bts), ("lab_runs", LabRun, [lab]),
+        ("journal", JournalEntry, build_journal(today)), ("notes", Note, build_notes(today)),
+        ("watchlist", WatchlistItem, build_watchlist()),
+        ("signals", SignalRow, build_signals(today, settings)), ("news_intel", NewsIntelRow, news),
+    ):
+        await _insert(db, model, rows)
+        done[label] = len(rows)
     # Paper book: a fill's order_id needs the inserted order id, so these go in one step.
-    if await _absent(db, AlgoOrder, AlgoOrder.id > 0):  # any order = a book exists; leave it
-        algo = build_algo(today, float(settings.algo_starting_cash))
-        order = AlgoOrder(**algo["order"])
-        db.add(order)
-        await db.flush()
-        db.add(AlgoFill(order_id=order.id, **algo["fill"]))
-        await _insert(db, AlgoPosition, [algo["position"]])
-        await _insert(db, AlgoAccountSnapshot, algo["snapshots"])
-        done["algo"] = 1
-    else:
-        done["algo"] = 0
+    algo = build_algo(today, float(settings.algo_starting_cash))
+    order = AlgoOrder(**algo["order"])
+    db.add(order)
+    await db.flush()
+    db.add(AlgoFill(order_id=order.id, **algo["fill"]))
+    await _insert(db, AlgoPosition, [algo["position"]])
+    await _insert(db, AlgoAccountSnapshot, algo["snapshots"])
+    done["algo"] = 1
+    await db.flush()
+    counts = {m.__tablename__: await _count(db, m) for m in _TABLES}
+    db.add(DemoSeedMarker(id=1, counts=counts))
+    await db.flush()
+    await verify_demo_database(db, settings, today)  # self-check before commit; raise = rollback
     await db.commit()
     return done
 

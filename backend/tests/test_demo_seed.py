@@ -30,10 +30,25 @@ TODAY = date(2026, 10, 16)
 # ── pure ────────────────────────────────────────────────────────
 def test_demo_empty_reads_flag() -> None:
     assert _settings(demo_mode=True).demo_empty_reads is True
-    # DEMO_READONLY is only a write gate: it never opens the database reads.
     assert _settings(demo_mode=True, demo_readonly=True).demo_empty_reads is True
-    assert _settings(demo_mode=True, demo_sample_reads=True).demo_empty_reads is False
+    assert _settings(demo_mode=True, demo_readonly=True, demo_sample_reads=True).demo_empty_reads is False
     assert _settings().demo_empty_reads is False
+
+
+@pytest.mark.parametrize("flags", [
+    {"demo_mode": True, "demo_sample_reads": True},  # mode + sample, NOT readonly
+    {"demo_readonly": True, "demo_sample_reads": True},
+    {"demo_sample_reads": True},
+])
+def test_sample_reads_rejected_at_startup_without_mode_and_readonly(flags: dict) -> None:
+    with pytest.raises(ValueError, match="DEMO_SAMPLE_READS requires"):
+        _settings(**flags)
+
+
+def test_signal_clamps_follow_the_sample_predicate() -> None:
+    assert _settings(demo_readonly=True).demo_clamp is True
+    assert _settings(demo_mode=True, demo_readonly=True, demo_sample_reads=True).demo_clamp is True
+    assert _settings(demo_mode=True).demo_clamp is False
 
 
 async def test_readonly_without_sample_reads_still_returns_empty() -> None:
@@ -135,8 +150,7 @@ def test_no_private_hosts_in_seed_text() -> None:
 
 
 @pytest.mark.parametrize("flags", [
-    {}, {"demo_readonly": True}, {"demo_mode": True, "demo_readonly": True},
-    {"demo_mode": True, "demo_sample_reads": True}, {"demo_readonly": True, "demo_sample_reads": True},
+    {}, {"demo_readonly": True}, {"demo_mode": True, "demo_readonly": True}, {"demo_mode": True},
 ])
 async def test_refuses_unless_all_three_flags(monkeypatch: pytest.MonkeyPatch, flags: dict) -> None:
     monkeypatch.setattr(demo_seed, "get_settings", lambda: _settings(**flags))
@@ -146,19 +160,6 @@ async def test_refuses_unless_all_three_flags(monkeypatch: pytest.MonkeyPatch, f
 
 # ── DB-backed (opt-in) ──────────────────────────────────────────
 needs_db = pytest.mark.skipif(os.environ.get("DEMO_SEED_TEST_DB") != "1", reason="DEMO_SEED_TEST_DB=1 (throwaway Postgres) not set")
-
-@needs_db
-async def test_seed_refuses_a_database_with_foreign_rows(db) -> None:
-    from app.db import session_scope
-    from app.models import WatchlistItem
-    async with session_scope() as s:
-        s.add(WatchlistItem(symbol="TSLA", sort_order=0))
-        await s.commit()
-    async with session_scope() as s:
-        with pytest.raises(demo_seed.ForeignRowsError):
-            await demo_seed.seed(s, get_settings())
-    assert (await _counts())["Backtest"] == 0  # nothing was written
-
 
 class _NoRedis:
     async def get(self, *a, **k): return None
@@ -188,7 +189,7 @@ async def db(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.redis._redis", _NoRedis())  # PaperBroker.mark -> failed quotes -> avg_cost
     init_engine()
     async with session_scope() as s:
-        for t in _TABLES:
+        for t in _TABLES + ("DemoSeedMarker",):
             await s.execute(delete(getattr(m, t)))
         await s.commit()
     yield
@@ -278,3 +279,136 @@ async def test_seeded_algo_book_reconciles_clean(db) -> None:
     assert r.status_code == 200 and j["clean"] is True
     assert j["cash"]["match"] is True and j["positions"] and all(p["match"] for p in j["positions"])
     assert acct["snapshots"] and acct["equity"] > 0
+
+
+# ── identity check: every way a private DB could look like a demo one ──────────
+async def _add(*rows) -> None:
+    from app.db import session_scope
+    async with session_scope() as s:
+        s.add_all(rows)
+        await s.commit()
+
+
+async def _refused() -> None:
+    from app.db import session_scope
+    async with session_scope() as s:
+        with pytest.raises(demo_seed.ForeignRowsError):
+            await demo_seed.seed(s, get_settings())
+    assert (await _counts())["Backtest"] == 0  # nothing was written
+    from app.models import DemoSeedMarker
+    async with session_scope() as s:
+        assert (await s.execute(select(func.count()).select_from(DemoSeedMarker))).scalar_one() == 0
+
+
+def _paper_trade(**kw):
+    from datetime import datetime, timezone
+    from app.models import AlgoOrder
+    now = datetime.now(timezone.utc)
+    base = dict(symbol="AAPL", side="buy", type="market", qty=40.0, status="filled", created_at=now, updated_at=now)
+    return AlgoOrder(**{**base, **kw})
+
+
+@needs_db
+async def test_seed_refuses_foreign_watchlist(db) -> None:
+    from app.models import WatchlistItem
+    await _add(WatchlistItem(symbol="TSLA", sort_order=0))
+    await _refused()
+
+
+@needs_db
+async def test_seed_refuses_real_reference_signals_only(db) -> None:
+    from app.models import SignalRow
+    await _add(SignalRow(signal_id="xs_mom_252_21", as_of_date=date(2026, 1, 30), symbol="AAPL",
+                         source="yfinance", value=0.3, meta={}))
+    await _refused()
+
+
+@needs_db
+async def test_seed_refuses_aapl_paper_trade(db) -> None:
+    await _add(_paper_trade())
+    await _refused()
+
+
+@needs_db
+async def test_seed_refuses_subset_watchlist(db) -> None:
+    from app.models import WatchlistItem
+    await _add(WatchlistItem(symbol="AAPL", sort_order=0), WatchlistItem(symbol="MSFT", sort_order=1))
+    await _refused()
+
+
+@needs_db
+async def test_seed_refuses_snapshots_without_orders(db) -> None:
+    from app.models import AlgoAccountSnapshot
+    await _add(AlgoAccountSnapshot(snapshot_date=date(2026, 10, 1), cash=1.0, positions_value=0.0, equity=1.0))
+    await _refused()
+
+
+async def _seed_once() -> None:
+    from app.db import session_scope
+    async with session_scope() as s:
+        await demo_seed.seed(s, get_settings())
+
+
+async def _verify() -> None:
+    from app.db import session_scope
+    async with session_scope() as s:
+        await demo_seed.verify_demo_database(s, get_settings())
+
+
+@needs_db
+async def test_seeded_database_verifies_and_every_tamper_is_caught(db) -> None:
+    from app.db import session_scope
+    from app.models import AlgoAccountSnapshot, DemoSeedMarker, SignalRow, WatchlistItem
+    await _seed_once()
+    await _verify()
+    extras = {
+        "watchlist": WatchlistItem(symbol="TSLA", sort_order=9),
+        "reference signal": SignalRow(signal_id="xs_mom_252_21", as_of_date=date(2020, 1, 31), symbol="AAPL",
+                                      source="yfinance", value=1.0, meta={}),
+        "sample-flagged signal": SignalRow(signal_id="xs_mom_252_21", as_of_date=date(2020, 1, 31), symbol="ZZZ",
+                                           source="yfinance", value=1.0, meta={"sample": True}),
+        "paper trade": _paper_trade(qty=3.0),
+        "snapshot": AlgoAccountSnapshot(snapshot_date=date(2019, 1, 1), cash=1.0, positions_value=0.0, equity=1.0),
+    }
+    for label, row in extras.items():
+        await _add(row)
+        with pytest.raises(demo_seed.ForeignRowsError):
+            await _verify()
+        async with session_scope() as s:
+            await s.delete(await s.merge(row))
+            await s.commit()
+        await _verify()  # restored: clean again (label=%s)
+    async with session_scope() as s:  # marker gone -> not a verified demo DB
+        await s.delete(await s.get(DemoSeedMarker, 1))
+        await s.commit()
+    with pytest.raises(demo_seed.ForeignRowsError):
+        await _verify()
+
+
+@needs_db
+async def test_startup_fails_closed_to_empty_reads(db) -> None:
+    from app.models import WatchlistItem
+    await _seed_once()
+    st = get_settings()
+    await demo_seed.verify_at_startup(st)
+    assert st.demo_sample_reads is True and st.demo_empty_reads is False  # verified: open
+    await _add(WatchlistItem(symbol="TSLA", sort_order=9))
+    await demo_seed.verify_at_startup(st)
+    assert st.demo_sample_reads is False and st.demo_empty_reads is True  # fooled DB: closed
+    assert st.demo_clamp is True  # readonly clamp stays on
+
+
+@needs_db
+async def test_startup_fails_closed_without_marker(db) -> None:
+    st = get_settings()
+    await demo_seed.verify_at_startup(st)  # empty DB, never seeded
+    assert st.demo_empty_reads is True
+
+
+@needs_db
+async def test_concurrent_seeds_serialise(db) -> None:
+    import asyncio
+    await asyncio.gather(_seed_once(), _seed_once())
+    c = await _counts()
+    assert c["Backtest"] == 2 and c["WatchlistItem"] == 5 and c["AlgoOrder"] == 1
+    await _verify()
