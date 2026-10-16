@@ -99,7 +99,7 @@ async def get_watchlist(
 ) -> list[dict[str, Any]]:
     # DEMO_MODE: the persisted watchlist is the live one — never serve
     # it to a demo visitor (same "empty read" pattern as signals/backtest/lab/algo).
-    if settings.demo_mode:
+    if settings.demo_empty_reads:
         return []
     rows = (
         (await db.execute(select(WatchlistItem).order_by(WatchlistItem.sort_order)))

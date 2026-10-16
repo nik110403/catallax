@@ -349,7 +349,7 @@ class SignalEngine:
     async def catalog(self) -> SignalCatalog:
         # DEMO_MODE: the signals table is seeded from the live Wealthfolio
         # book (SignalRow.symbol) — never list it; empty is honest and leak-free.
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             return SignalCatalog(signals=[])
         async with session_scope() as session:
             stmt = (
@@ -385,7 +385,7 @@ class SignalEngine:
         # DEMO_MODE: shared detail-read chokepoint for grade()/cross_section() —
         # both already raise NotFound on an empty result, so this alone gives the
         # same 404 a real "unknown signal_id" produces, without a new error shape.
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             return []
         async with session_scope() as session:
             res = (await session.execute(

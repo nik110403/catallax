@@ -180,7 +180,7 @@ class BacktestService:
     async def get(self, job_id: str) -> BacktestJob:
         # DEMO_MODE: shared detail-read chokepoint — also covers the /stream route's
         # existence pre-check and in-generator state read (both call this method).
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             raise NotFound("backtest not found")
         async with session_scope() as db:
             row = (await db.execute(select(Backtest).where(Backtest.job_id == job_id))).scalar_one_or_none()
@@ -189,7 +189,7 @@ class BacktestService:
         return _job(row)
 
     async def list(self, limit: int = 50) -> BacktestList:
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             return BacktestList(jobs=[])
         limit = max(1, min(int(limit), 200))
         async with session_scope() as db:
@@ -199,7 +199,7 @@ class BacktestService:
         return BacktestList(jobs=[_job(r) for r in rows])
 
     async def report(self, job_id: str) -> Envelope[BacktestReport]:
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             raise NotFound("backtest not found")
         async with session_scope() as db:
             row = (await db.execute(select(Backtest).where(Backtest.job_id == job_id))).scalar_one_or_none()

@@ -12,7 +12,7 @@ calls an upstream data source on a visitor's request.
 | `nginx.demo.conf` | Demo nginx: 20 r/s (burst 40) limit on `/api/`, at most 2 price websockets per client, 405 for non-read methods outside `/api/`, 404 for `/fava/`, upstreams re-resolved per request (a recreated container never leaves a stale IP) |
 | `compose.sh` | Compose wrapper with the project name and file order pinned |
 | `preflight-demo.sh` | Fails closed on external networks, outside bind mounts, privileged, docker socket, all-interface ports, missing limits or `read_only`, unlisted `cap_add`, any `security_opt` other than exactly `no-new-privileges:true` (so `unconfined`, `label:disable` and the like), a missing, malformed or broad nginx `DEMO_TRUSTED_PROXY` (or a template mount that is not the read-only repo directory holding only the one `${DEMO_TRUSTED_PROXY} 1;` template, or a missing `demo-env` tmpfs), a missing, multi-subnet, outside-/16-/28 or proxy-overlapping `default` network subnet, a wrong demo flag, and any private marker from `DEMO_DENY_MARKERS_FILE`. The values of `DEMO_BIND_ADDR` and `DEMO_TRUSTED_PROXY` (which compose inlines into services that load the stack env file) are exempt by key name only; the same value under any other key still fails |
-| `reset-demo.sh` + `catallax-demo-reset.{service,timer}` | Nightly 03:30 reset (read-only throughout, never seeded) |
+| `reset-demo.sh` + `catallax-demo-reset.{service,timer}` | Nightly 03:30 reset (read-only throughout; the `demo-seed` service re-seeds the wiped database) |
 | `catallax-demo-warm.{service,timer}` | Cache warm job schedule |
 | `traefik-catallax-demo.yml.tmpl` | Edge proxy routers, method allowlist, rate limiters |
 | `demo.env.example` | Environment template (demo values only) |
@@ -21,7 +21,7 @@ calls an upstream data source on a visitor's request.
 
 1. Edge (Traefik): only `GET`, `HEAD` and `OPTIONS` reach the app; everything else is answered 405.
 2. App (`DEMO_READONLY=true`): any other method on `/api/v1/*` returns `403 {"error":"read_only_demo"}`.
-3. Data: the sample ledger is mounted read-only, and the nightly reset wipes PostgreSQL and Redis. The demo is not seeded and never unlocked.
+3. Data: the sample ledger is mounted read-only, and the nightly reset wipes PostgreSQL and Redis. The one-shot `demo-seed` service writes synthetic sample rows on every `up` (see below); the demo is never unlocked.
 
 Upstream calls: the backend runs `UPSTREAM_MODE=cache-only`. A cache miss returns
 the stale cached value or an empty result, and never fetches. The warm job
@@ -53,15 +53,31 @@ the trap runs `down`; a stack that is not provably read-only does not serve.
 Config comes from the stack env file, not the caller's shell. A `flock` on
 `.demo-lock` keeps reset and the warm unit from overlapping.
 
-### What the demo lacks without seeding
+### Sample artifacts (`demo-seed`)
 
-Spec E5 assumed `bin/seed-demo.sh` would pre-fill the lab, backtest, report and
-news-intel tabs. That script refuses `DEMO_MODE=true` (everything is read-only),
-and the demo has no unlocked window, so those tabs start empty: lab runs,
-backtests, reports, journal, notes, user-created signals, the watchlist and
-news-intel results. Tabs fed by the stub exporter, the warm job (quotes,
-boards, news, fundamentals, daily bars) and the persona code stay populated.
-Building demo-safe seed data is a separate task.
+Half the tabs would otherwise be empty showcases, so the one-shot `demo-seed`
+compose service (same image and hardening as `demo-warm`, `restart: "no"`) runs
+`alembic upgrade head && python -m app.demo_seed` on every `up`; the backend waits
+for it (`service_completed_successfully`). Because the reset wipes the database
+and then runs `up --wait`, the seed is restored nightly with no extra step. It
+writes ORM rows directly (never through a writable API), validates the JSON
+blobs with `BacktestReport` / `FactorReport`, dates rows relative to today, is
+idempotent, and refuses to run unless `DEMO_READONLY=true`.
+
+Seeded (all obviously synthetic; news links point at example.com): 2 backtests,
+1 lab factor study, 3 journal entries, 3 notes, 5 watchlist symbols, user signals
+(two signal ids x month-end dates x persona symbols the warm job fetches bars for;
+graded at read time once warm has stored the bars), news-intel rows with
+coordinates, and one filled paper order with its fill, position and account
+snapshots whose cash reconciles exactly. Under `DEMO_MODE` + `DEMO_READONLY`
+the backtest, lab, journal, notes, algo, signals and watchlist GET routes read
+this data instead of returning their hard-coded empty result (`DEMO_MODE` alone,
+the local demo, still returns empty). Writes stay refused by the middleware and
+the edge.
+
+Still empty: report narration (the demo report path is synthetic and needs a
+rewrite, not rows), the PDF (404 in demo), algo strategies, and anything a visitor
+would have to create.
 
 Install the timers (replace `@STACK_DIR@` with the clone path):
 

@@ -258,7 +258,7 @@ class AlgoService:
         return result
 
     async def list_orders(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             return []
         limit = max(1, min(int(limit), 500))
         async with session_scope() as db:
@@ -269,7 +269,7 @@ class AlgoService:
         return [_order_dict(r) for r in rows]
 
     async def list_fills(self, limit: int = 100) -> list[dict[str, Any]]:
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             return []
         limit = max(1, min(int(limit), 500))
         async with session_scope() as db:
@@ -279,7 +279,7 @@ class AlgoService:
         return [_fill_dict(r) for r in rows]
 
     async def positions(self) -> list[dict[str, Any]]:
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             return []
         async with session_scope() as db:
             rows = (await db.execute(select(AlgoPosition).where(AlgoPosition.qty != 0))).scalars().all()
@@ -295,7 +295,7 @@ class AlgoService:
         return out
 
     async def account(self) -> dict[str, Any]:
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             return {
                 "cash": 0.0, "equity": 0.0, "positions_value": 0.0, "day_pnl": None,
                 "snapshots": [],
@@ -378,7 +378,7 @@ class AlgoService:
         and the derived-cash aggregate (`_compute_cash`'s SQL SUM). The replayed
         cash is computed independently via `replay_cash` over the same fill
         list — a genuine cross-check, not a copy of the stored figure."""
-        if self._settings.demo_mode:
+        if self._settings.demo_empty_reads:
             return {"clean": True, "positions": [], "cash": {"stored": 0.0, "replayed": 0.0, "match": True}}
         async with session_scope() as db:
             fills = (await db.execute(

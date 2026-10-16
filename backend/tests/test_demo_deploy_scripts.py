@@ -121,6 +121,14 @@ def test_preflight_passes_on_a_copied_stack(tmp_path: Path) -> None:
     assert r.returncode == 0, r.stderr
 
 
+def test_preflight_allowlists_the_demo_seed_service(tmp_path: Path) -> None:
+    render = _render()
+    render["services"]["demo-seed"] = _svc(cap_add=[])
+    assert _run_preflight(tmp_path, render).returncode == 0
+    render["services"]["not-a-demo-service"] = _svc()
+    assert _run_preflight(tmp_path, render).returncode != 0
+
+
 def test_preflight_template_content_must_be_exactly_the_trust_line(tmp_path: Path) -> None:
     r = _tampered(tmp_path, lambda t: (t / "demo-trusted-proxy.conf.template").write_text("0.0.0.0/0 1;\n"))
     assert r.returncode != 0 and "demo-trusted-proxy.conf.template" in r.stderr

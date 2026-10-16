@@ -94,7 +94,7 @@ async def list_notes(
     settings: Settings = Depends(get_settings),
     redis: Redis = Depends(get_redis),
 ) -> dict[str, Any]:
-    if settings.demo_mode:
+    if settings.demo_empty_reads:
         return {"notes": [], "count": 0}
     rows = await NotesService(redis, settings).list(
         kind=kind, status=status, limit=limit
@@ -108,7 +108,7 @@ async def get_note(
     settings: Settings = Depends(get_settings),
     redis: Redis = Depends(get_redis),
 ) -> dict[str, Any]:
-    if settings.demo_mode:
+    if settings.demo_empty_reads:
         raise NotFound("notes are not available in demo mode")
     return await NotesService(redis, settings).get(slug)
 

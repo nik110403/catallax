@@ -84,7 +84,7 @@ async def list_entries(
     limit: int = Query(_DEFAULT_LIST_LIMIT, ge=1, le=_MAX_LIST_LIMIT),
     settings: Settings = Depends(get_settings), redis: Redis = Depends(get_redis),
 ) -> dict[str, Any]:
-    if settings.demo_mode:
+    if settings.demo_empty_reads:
         return {"entries": [], "count": 0}
     rows = await JournalService(redis, settings).list(status=status, subject=subject, due_before=due_before, limit=limit)
     return {"entries": rows, "count": len(rows)}
@@ -95,7 +95,7 @@ async def due_entries(
     before: date = Query(default_factory=date.today),
     settings: Settings = Depends(get_settings), redis: Redis = Depends(get_redis),
 ) -> dict[str, Any]:
-    if settings.demo_mode:
+    if settings.demo_empty_reads:
         return {"entries": [], "count": 0}
     rows = await JournalService(redis, settings).due(before)
     return {"entries": rows, "count": len(rows)}
@@ -106,7 +106,7 @@ async def get_entry(
     entry_id: int = Path(..., ge=1),
     settings: Settings = Depends(get_settings), redis: Redis = Depends(get_redis),
 ) -> dict[str, Any]:
-    if settings.demo_mode:
+    if settings.demo_empty_reads:
         raise NotFound("journal entries are not available in demo mode")
     return await JournalService(redis, settings).get(entry_id)
 

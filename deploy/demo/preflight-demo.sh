@@ -77,7 +77,7 @@ for kind in ("secrets", "configs"):
             bad.append("%s %r is external" % (kind, n))
 
 ALLOWED = {"nginx", "react-frontend", "fastapi-backend", "stub-exporter", "postgres",
-           "redis", "fava", "notes-mount-init", "demo-warm"}
+           "redis", "fava", "notes-mount-init", "demo-warm", "demo-seed"}
 services = cfg.get("services") or {}
 for sname in services:
     if sname not in ALLOWED:

@@ -64,10 +64,13 @@ services:
     cpus: 1.0
     networks: !override [default]  # no macro-net: the openbb-data sidecar is not part of the demo
     tmpfs: [/tmp]
+    depends_on:  # merges with the base file's map: the sample rows land before the backend serves
+      demo-seed:
+        condition: service_completed_successfully
     environment:
       HOME: /tmp
       DEMO_MODE: "true"
-      DEMO_READONLY: "true"  # never unlocked: the demo is not seeded
+      DEMO_READONLY: "true"  # never unlocked: demo-seed writes the sample rows, nothing else does
       UPSTREAM_MODE: cache-only
       LLM_PROVIDER: noop
       SHARE_PASSPHRASE: ""
@@ -149,6 +152,30 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # One-shot sample-artifact seed (DEMO-SPEC §13): migrates, then writes the synthetic
+  # backtest/lab/journal/notes/watchlist/signals/algo/news rows straight into Postgres.
+  # Runs on every `up` (the nightly reset re-seeds the wiped database); the backend
+  # waits for it. app.demo_seed refuses to run unless DEMO_READONLY=true.
+  demo-seed:
+    <<: *hardened
+    image: catallax-demo-backend:local
+    command: ["sh", "-c", "alembic upgrade head && python -m app.demo_seed"]
+    env_file: .env
+    environment:
+      HOME: /tmp
+      DEMO_MODE: "true"
+      DEMO_READONLY: "true"
+      UPSTREAM_MODE: cache-only
+      LLM_PROVIDER: noop
+      SHARE_PASSPHRASE: ""
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs: [/tmp]
+    restart: "no"
+    depends_on:
       postgres:
         condition: service_healthy
 

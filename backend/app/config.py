@@ -788,6 +788,14 @@ class Settings(BaseSettings):
         return v
 
     @property
+    def demo_empty_reads(self) -> bool:
+        """DEMO_MODE read gates (backtest/lab/journal/notes/algo/signals/watchlist)
+        return a hard-coded empty result. The hosted read-only demo (DEMO_READONLY)
+        instead serves the synthetic rows `app.demo_seed` wrote; writes stay refused
+        by DemoReadOnlyMiddleware either way."""
+        return self.demo_mode and not self.demo_readonly
+
+    @property
     def news_feed_urls(self) -> list[str]:
         return [u.strip() for u in self.news_feeds.split(",") if u.strip()]
 

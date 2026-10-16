@@ -3,8 +3,10 @@
 # back READ-ONLY, check that writes are refused, then warm the caches.
 # Run by catallax-demo-reset.service (03:30). Idempotent; safe to run by hand.
 #
-# The demo is never seeded and never unlocked: DEMO_READONLY is pinned to true
-# in compose.demo.yml and nothing here changes it. Config comes from the stack
+# The demo is never unlocked: DEMO_READONLY is pinned to true in compose.demo.yml
+# and nothing here changes it. The sample artifacts (DEMO-SPEC §13) come from the
+# one-shot `demo-seed` service, which `up --wait` runs on the wiped database before
+# the backend starts serving; this script does no seeding of its own. Config comes from the stack
 # `.env` (compose reads it itself), not from the caller's shell environment.
 #
 # A flock on $STACK/.demo-lock keeps reset and warm from running concurrently
