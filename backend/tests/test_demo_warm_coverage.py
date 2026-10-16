@@ -79,21 +79,24 @@ def warmed(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(markets, name, _noop)
     monkeypatch.setattr(news, "get_news", _noop)
     real_bundle = dw.MarketResearchEngine.bundle
+    real_screen = dw.ResearchEngine.screen
     monkeypatch.setattr(dw.MarketResearchEngine, "bundle", _noop)
+    monkeypatch.setattr(dw.ResearchEngine, "screen", _noop)
     for cls, name in ((ShillerAdapter, "cape"), (BreadthAdapter, "diary"),
                       (SentimentAdapter, "fear_greed"), (SentimentAdapter, "cot"),
                       (FundamentalsAdapter, "statements")):
         monkeypatch.setattr(cls, name, _noop)
 
-    return dw, redis, stored, real_bundle
+    return dw, redis, stored, (real_bundle, real_screen)
 
 
 @pytest.fixture
 async def warm_run(warmed, monkeypatch: pytest.MonkeyPatch):
-    dw, redis, stored, real_bundle = warmed
+    dw, redis, stored, (real_bundle, real_screen) = warmed
     ok, core, optional = await dw.warm(redis, get_settings())
     assert core == 0 and optional == 0 and ok > 0
     monkeypatch.setattr(dw.MarketResearchEngine, "bundle", real_bundle)
+    monkeypatch.setattr(dw.ResearchEngine, "screen", real_screen)
     monkeypatch.setenv("UPSTREAM_MODE", "cache-only")
     get_settings.cache_clear()
     yield redis, stored, get_settings()
@@ -209,3 +212,62 @@ async def test_history_warm_waits_out_a_rate_limit(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(dw.asyncio, "sleep", _sleep)
     await dw._warm_history(get_settings(), _FakeRedis(), build_adapter("yfinance", _FakeRedis(), get_settings()), "SPY")
     assert attempts["n"] == 3 and sleeps == [dw.RATE_LIMIT_WAIT_SECONDS] * 2
+
+
+async def test_ticker_only_quote_failure_does_not_fail_the_warm(warmed, monkeypatch: pytest.MonkeyPatch) -> None:
+    """BTC/ETH are held, but `BTC:coingecko` is a ticker token on another adapter: its
+    outage is an optional failure, not a core one."""
+    from app.adapters.coingecko_adapter import CoinGeckoAdapter
+
+    dw, redis, _stored, _bundle = warmed
+
+    async def _boom(self, symbol):  # noqa: ANN001
+        raise RuntimeError("coingecko down")
+
+    monkeypatch.setattr(CoinGeckoAdapter, "_fetch_quote", _boom)
+    ok, core, optional = await dw.warm(redis, get_settings())
+    assert core == 0 and optional >= 3 and ok > 0
+
+
+async def test_warm_refreshes_screen_as_last_research_step(warmed, monkeypatch: pytest.MonkeyPatch) -> None:
+    dw, redis, _stored, _bundle = warmed
+    order: list[str] = []
+
+    async def _bundle(self, refresh=False):  # noqa: ANN001
+        order.append(f"bundle:{refresh}")
+
+    async def _screen(self, filters, refresh=False):  # noqa: ANN001
+        order.append(f"screen:{refresh}")
+
+    monkeypatch.setattr(dw.MarketResearchEngine, "bundle", _bundle)
+    monkeypatch.setattr(dw.ResearchEngine, "screen", _screen)
+    await dw.warm(redis, get_settings())
+    assert order == ["bundle:True", "screen:True"]
+
+
+async def test_screen_refresh_overwrites_a_sticky_degraded_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+    from app.services.research import ResearchEngine, ScreenRow
+
+    get_settings.cache_clear()
+    s, redis = get_settings(), _FakeRedis()
+    eng = ResearchEngine(redis, s)
+    calls = {"n": 0}
+
+    async def _row(self, sym, label):  # noqa: ANN001
+        calls["n"] += 1
+        return ScreenRow(symbol=sym, name=label, **dict.fromkeys(
+        ("sector", "price", "market_cap", "pe", "pb", "ps", "div_yield", "roe", "f_score", "z_score", "m_score")))
+
+    monkeypatch.setattr(ResearchEngine, "_screen_row", _row)
+    # a degraded (empty) result cached by an early visitor
+    key = "research:screen:" + __import__("hashlib").sha256(s.research_universe.encode()).hexdigest()[:12] \
+        + ":" + datetime.now(timezone.utc).date().isoformat()
+    redis.kv[key] = "[]"
+    report, _ = await eng.screen({})
+    assert report.rows == [] and calls["n"] == 0  # visitor path reads the sticky cache
+    report, _ = await eng.screen({}, refresh=True)
+    assert report.rows and calls["n"] > 0
+    assert len(json.loads(redis.kv[key])) == len(report.rows)
+    report, _ = await eng.screen({})
+    assert report.rows  # later visitors see the refreshed key

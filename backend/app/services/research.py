@@ -604,19 +604,19 @@ class ResearchEngine:
             return None
 
     # ── screen the configured universe ────────────────────────
-    async def screen(self, filters: dict[str, float]) -> tuple[ScreenReport, dict[str, Any]]:
+    async def screen(self, filters: dict[str, float], refresh: bool = False) -> tuple[ScreenReport, dict[str, Any]]:
         universe = self._settings.research_universe_map[: self._settings.research_screen_max_symbols]
         cache_key = (
             "research:screen:"
             + hashlib.sha256(self._settings.research_universe.encode()).hexdigest()[:12]
             + f":{datetime.now(timezone.utc).date().isoformat()}"
         )
-        base_rows = await self._read_screen_cache(cache_key)
+        base_rows = None if refresh else await self._read_screen_cache(cache_key)
         if base_rows is None:
             # Double-checked under the lock: a request that waited may find the cache
             # now warm (the holder just wrote it) and skip the fan-out entirely.
             async with _SCREEN_LOCK:
-                base_rows = await self._read_screen_cache(cache_key)
+                base_rows = None if refresh else await self._read_screen_cache(cache_key)
                 if base_rows is None:
                     sem = asyncio.Semaphore(self._settings.research_fetch_concurrency)
 

@@ -162,10 +162,12 @@ async def warm(redis: Redis, settings: Settings) -> tuple[int, int, int]:
 
     chain = build_chain("equity", redis, settings)
     symbols = warm_symbols(settings)
-    held = {s.upper() for s, _c in symbols}
+    # Core = the exact (adapter, symbol) the holdings path reads; a ticker-bar token for
+    # the same symbol on another adapter (BTC:coingecko) is optional.
+    held = {(chain.name, s.upper()) for s, _c in symbols}
     for reader, sym in quote_targets(redis, settings, symbols):
         # Holdings are core (a missing quote empties a tab); ticker-bar extras are not.
-        await step(f"quote {reader.name}:{sym}", reader.get_quote(sym), core=sym.upper() in held)
+        await step(f"quote {reader.name}:{sym}", reader.get_quote(sym), core=(reader.name, sym.upper()) in held)
     fundamentals = FundamentalsAdapter(redis, settings)
     for sym, cls in symbols:
         if cls == "equity":
@@ -190,6 +192,9 @@ async def warm(redis: Redis, settings: Settings) -> tuple[int, int, int]:
     # Recompute the market-research bundle from the bars just stored: a bundle cached
     # earlier from empty history would otherwise keep the null reports for its 6h TTL.
     await step("market-research bundle", MarketResearchEngine(redis, settings).bundle(refresh=True))
+    # Last research step (needs the bars + fundamentals above): overwrite the day's screen
+    # cache so a degraded result computed by an early visitor doesn't stick for its 6h TTL.
+    await step("research screen", ResearchEngine(redis, settings).screen({}, refresh=True))
     return ok, core_failed, optional_failed
 
 
