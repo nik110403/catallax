@@ -8,10 +8,13 @@ lives in deploy/demo/, not here.
 
 Default symbols = the demo persona's holdings (`services/demo.WF_ASSETS`);
 override with `DEMO_WARM_SYMBOLS=AAPL,BTC,...`. Individual failures never
-stop the run; they are logged and counted, and the exit status is non-zero when
-any step failed so the timer unit shows it. It also backfills two years of
+stop the run; they are logged and counted. The exit status is non-zero only when
+a CORE step failed (quotes, daily bars), so the timer unit shows real breakage and
+not expected gaps (ETFs have no fundamentals). It also backfills two years of
 daily bars into Postgres (`daily_bars`) through `HistoryStore`, because
-cache-only mode cannot backfill and history/risk/signals read from there.
+cache-only mode cannot backfill and history/risk/signals read from there. The bar
+keys come from the risk and signals engines' own resolution (crypto -> yfinance
+`BTC-USD`, FX `EURUSD=X`, `^GSPC` and `BTC-USD` benchmarks), never a copy of it.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 
 from redis.asyncio import Redis
 
+from app.adapters.base import PriceSourceAdapter
 from app.adapters.breadth_adapter import BreadthAdapter
 from app.adapters.factory import build_chain
 from app.adapters.fundamentals_adapter import FundamentalsAdapter
@@ -33,6 +37,8 @@ from app.db import dispose_engine, init_engine, session_scope
 from app.services import markets, news
 from app.services.demo import WF_ASSETS
 from app.services.history import HistoryStore
+from app.services.risk import RiskEngine
+from app.services.signals import SignalEngine
 
 logger = logging.getLogger("catallax.demo_warm")
 
@@ -48,39 +54,56 @@ def warm_symbols(settings: Settings) -> list[tuple[str, str]]:
     return [(s, by_symbol.get(s, "equity")) for s in configured]
 
 
-async def _warm_history(redis: Redis, settings: Settings, symbol: str, asset_class: str) -> None:
-    """Backfill `daily_bars` through HistoryStore with the same adapter chain the
-    API's default price route uses, so the stored (symbol, source) key matches."""
-    chain = build_chain(asset_class, redis, settings)
+def history_targets(redis: Redis, settings: Settings, symbols: list[tuple[str, str]]) -> list[tuple[PriceSourceAdapter, str]]:
+    """Every (adapter, symbol) the risk lens and the signal engine read daily bars
+    through for these holdings, de-duplicated by the stored key. Derived from their
+    own resolution code (not re-implemented here) so the keys the warm writes are
+    the keys the cache-only backend reads: crypto as `BTC-USD`/yfinance, the EURUSD=X
+    FX leg and both benchmarks included."""
+    targets = RiskEngine(redis, settings).history_targets(symbols) + SignalEngine(redis, settings).history_targets(symbols)
+    seen: dict[tuple[str, str], tuple[PriceSourceAdapter, str]] = {}
+    for adapter, sym in targets:
+        seen.setdefault((adapter.name, adapter.history_symbol(sym.upper()).upper()), (adapter, sym))
+    return list(seen.values())
+
+
+async def _warm_history(settings: Settings, redis: Redis, adapter: PriceSourceAdapter, symbol: str) -> None:
+    """Backfill `daily_bars` for one key through HistoryStore."""
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=HISTORY_DAYS)
     async with session_scope() as db:
-        await HistoryStore(db, redis, settings).get_daily(chain, symbol, start, end)
+        await HistoryStore(db, redis, settings).get_daily(adapter, symbol, start, end)
 
 
-async def warm(redis: Redis, settings: Settings) -> tuple[int, int]:
-    """Fetch everything once. Returns (ok, failed). `settings` must be live-mode."""
-    ok = failed = 0
+async def warm(redis: Redis, settings: Settings) -> tuple[int, int, int]:
+    """Fetch everything once. Returns (ok, core_failed, optional_failed).
+    `settings` must be live-mode. Core = quotes and every daily-bar series the
+    risk/signals lenses read (holdings, FX, benchmarks); a core failure leaves a
+    tab empty. Optional = fundamentals (ETFs have none), boards, news, sentiment."""
+    ok = core_failed = optional_failed = 0
 
-    async def step(label: str, coro) -> None:  # noqa: ANN001
-        nonlocal ok, failed
+    async def step(label: str, coro, core: bool = False) -> None:  # noqa: ANN001
+        nonlocal ok, core_failed, optional_failed
         try:
             await coro
             ok += 1
         except Exception as exc:  # one dead source must not stop the rest
-            failed += 1
-            logger.warning("warm %s failed: %s", label, exc)
+            if core:
+                core_failed += 1
+            else:
+                optional_failed += 1
+            logger.warning("warm %s failed (%s): %s", label, "CORE" if core else "optional", exc)
 
     chain = build_chain("equity", redis, settings)
     symbols = warm_symbols(settings)
     for sym, _cls in symbols:
-        await step(f"quote {sym}", chain.get_quote(sym))
+        await step(f"quote {sym}", chain.get_quote(sym), core=True)
     fundamentals = FundamentalsAdapter(redis, settings)
     for sym, cls in symbols:
         if cls == "equity":
             await step(f"fundamentals {sym}", fundamentals.statements(sym, asset_class=cls))
-    for sym, cls in symbols:
-        await step(f"history {sym}", _warm_history(redis, settings, sym, cls))
+    for adapter, sym in history_targets(redis, settings, symbols):
+        await step(f"history {adapter.name}:{sym}", _warm_history(settings, redis, adapter, sym), core=True)
     sentiment = SentimentAdapter(redis, settings)
     await step("markets", markets.get_overview(redis, settings))
     await step("quakes", markets.get_quakes(redis, settings))
@@ -88,7 +111,7 @@ async def warm(redis: Redis, settings: Settings) -> tuple[int, int]:
     await step("shiller", ShillerAdapter(redis, settings).cape())
     await step("breadth", BreadthAdapter(redis, settings).diary())
     await step("fear-greed", sentiment.fear_greed())
-    return ok, failed
+    return ok, core_failed, optional_failed
 
 
 async def _main() -> int:
@@ -99,12 +122,12 @@ async def _main() -> int:
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     init_engine()
     try:
-        ok, failed = await warm(redis, settings)
+        ok, core_failed, optional_failed = await warm(redis, settings)
     finally:
         await redis.aclose()
         await dispose_engine()
-    logger.info("demo warm done: %d ok, %d failed", ok, failed)
-    return 1 if failed else 0
+    logger.info("demo warm done: %d ok, %d core failed, %d optional failed", ok, core_failed, optional_failed)
+    return 1 if core_failed else 0
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ calls an upstream data source on a visitor's request.
 | `compose.demo.yml` | Overlay on `docker-compose.yml`: own project `catallax-demo`, memory/CPU limits, read-only root filesystems, `no-new-privileges`, `cap_drop: ALL`, heavy services and fava switched off (profile `never`), the warm job |
 | `nginx.demo.conf` | Demo nginx: 20 r/s (burst 40) limit on `/api/`, at most 2 price websockets per client, 405 for non-read methods outside `/api/`, 404 for `/fava/`, upstreams re-resolved per request (a recreated container never leaves a stale IP) |
 | `compose.sh` | Compose wrapper with the project name and file order pinned |
-| `preflight-demo.sh` | Fails closed on external networks, outside bind mounts, privileged, docker socket, all-interface ports, missing limits or `read_only`, unlisted `cap_add`, `unconfined` profiles, a wrong demo flag, and any private marker from `DEMO_DENY_MARKERS_FILE` |
+| `preflight-demo.sh` | Fails closed on external networks, outside bind mounts, privileged, docker socket, all-interface ports, missing limits or `read_only`, unlisted `cap_add`, any `security_opt` other than exactly `no-new-privileges:true` (so `unconfined`, `label:disable` and the like), a malformed or broad `DEMO_TRUSTED_PROXY`, a wrong demo flag, and any private marker from `DEMO_DENY_MARKERS_FILE`. The values of `DEMO_BIND_ADDR` and `DEMO_TRUSTED_PROXY` (which compose inlines into services that load the stack env file) are exempt by key name only; the same value under any other key still fails |
 | `reset-demo.sh` + `catallax-demo-reset.{service,timer}` | Nightly 03:30 reset (read-only throughout, never seeded) |
 | `catallax-demo-warm.{service,timer}` | Cache warm job schedule |
 | `traefik-catallax-demo.yml.tmpl` | Edge proxy routers, method allowlist, rate limiters |
@@ -27,11 +27,11 @@ Upstream calls: the backend runs `UPSTREAM_MODE=cache-only`. A cache miss return
 the stale cached value or an empty result, and never fetches. The warm job
 (`python -m app.demo_warm`, run through the `demo-warm` compose service) is the
 only caller; it fetches the persona's symbols (`DEMO_WARM_SYMBOLS` overrides)
-plus the market boards, then exits non-zero if any step failed. It also backfills two years of daily bars into PostgreSQL (`daily_bars`) through `HistoryStore`: the cache-only backend cannot backfill, so history, risk, signals and research read those stored bars. The warm job is the one process started with `UPSTREAM_MODE=live`; the backend's mode comes from `compose.demo.yml` and cannot be changed by a request.
+plus the market boards, then exits non-zero only if a core step failed (quotes, or any daily-bar series the risk and signals lenses read: holdings, FX, benchmarks). Optional steps (fundamentals, which ETFs do not have, boards, news, sentiment) log a warning and exit 0, so the nightly unit shows real breakage and not expected gaps. CoinGecko history requests are capped at 365 days (the free API's limit). It also backfills up to two years of daily bars into PostgreSQL (`daily_bars`) through `HistoryStore`: the cache-only backend cannot backfill, so history, risk, signals and research read those stored bars. The warm job is the one process started with `UPSTREAM_MODE=live`; the backend's mode comes from `compose.demo.yml` and cannot be changed by a request.
 
 ## Deploy
 
-Needs Docker Compose 2.24 or newer.
+Needs Docker Compose 2.24.4 or newer (`!override` in `compose.demo.yml`). `compose.sh`, and with it the preflight and every unit, checks `docker compose version` and refuses to run on anything older.
 
 ```bash
 git clone <public repo url> catallax-demo && cd catallax-demo
@@ -45,7 +45,7 @@ deploy/demo/reset-demo.sh
 ```
 
 `reset-demo.sh` is the whole nightly sequence: `down`, remove the two stateful
-volumes, `up` (read-only, default flags, never unlocked), a write probe, then the
+volumes (a volume that still exists afterwards fails the reset and the trap takes the stack down), `up` (read-only, default flags, never unlocked), a write probe, then the
 warm job. The probe POSTs to `/api/v1/watchlist` from inside the backend
 container (`compose.sh exec fastapi-backend`, its own port 8000, so no extra
 port is published) and must get 403. If anything fails before the probe passes,
@@ -88,10 +88,23 @@ HOSTNAME=demo.example.org BACKEND_URL=http://<lan-address>:8190 EDGE_CHAIN=<your
 ```
 
 `EDGE_CHAIN` is your existing middleware chain (security headers, HSTS, bot
-protection). The template adds two rate limiters keyed on `Cf-Connecting-Ip`; the demo nginx keys its own limits on the same header (falling back to the socket address when it is empty):
+protection). The template adds an `ipAllowList` middleware on all three demo
+routers, restricted to `CLOUDFLARED_SOURCE` (the CIDR of the cloudflared
+connector as Traefik sees it, e.g. `CLOUDFLARED_SOURCE=203.0.113.10/32` added to
+the `envsubst` call and its variable list), so nothing but the tunnel can reach
+the demo through Traefik. It also adds two rate limiters keyed on `Cf-Connecting-Ip`:
 `/api/*` at 10 r/s (burst 40) and static assets at 100 r/s (burst 400). The
 static limiter is deliberately generous: the SPA preloads many chunks on first
-load. `Cf-Connecting-Ip` is trustworthy only because the demo port is reachable solely through the tunnel/edge path, so the LAN port must never be forwarded on your router.
+load. 
+
+The demo nginx keys its own limits on `Cf-Connecting-Ip` only when the socket
+peer is inside `DEMO_TRUSTED_PROXY` (stack env file; Traefik's address as nginx
+sees it, a single IPv4 CIDR no broader than /8, default `127.0.0.1/32` = nobody
+useful). Every other peer, such as a LAN host or anything reaching the port
+without Traefik, is keyed on its own socket address, so a forged header cannot
+buy a fresh rate bucket or extra websocket slots. `compose.demo.yml` renders the
+value into `/etc/nginx/demo-trusted-proxy.conf` (a compose `configs` entry). The
+LAN port must still never be forwarded on your router.
 
 ## Memory budget
 

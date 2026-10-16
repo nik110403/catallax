@@ -101,7 +101,8 @@ class CoinGeckoAdapter(PriceSourceAdapter):
         self, symbol: str, start: datetime, end: datetime, interval: str
     ) -> list[Candle]:
         coin_id = await self._resolve_id(symbol)
-        span_days = max(1, (end - start).days or 1)
+        # The free API serves at most the last 365 days of OHLC; a longer ask is refused.
+        span_days = min(365, max(1, (end - start).days or 1))
         data = await self._get(
             f"/coins/{coin_id}/ohlc",
             {"vs_currency": "usd", "days": str(span_days)},

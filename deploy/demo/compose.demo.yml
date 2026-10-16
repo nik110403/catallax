@@ -1,7 +1,7 @@
 # Hosted public demo overlay (DEMO-SPEC C7b / §4, §5.4).
 # Use ONLY through ./compose.sh, which pins project name, file order and flags:
 #   docker compose -p catallax-demo -f docker-compose.yml -f deploy/demo/compose.demo.yml ...
-# Needs Docker Compose >= 2.24 (`!override`). Own project, own networks and volumes,
+# Needs Docker Compose >= 2.24.4 (`!override`; compose.sh enforces it). Own project, own networks and volumes,
 # no external network, no docker socket, no bind mount outside the stack dir.
 name: catallax-demo
 
@@ -9,6 +9,12 @@ x-hardened: &hardened
   security_opt: ["no-new-privileges:true"]
   cap_drop: [ALL]
   read_only: true
+
+configs:
+  # The one peer whose Cf-Connecting-Ip nginx believes (Traefik's address, a CIDR).
+  # The default trusts nobody useful (loopback is not reachable from the LAN).
+  demo_trusted_proxy:
+    content: "${DEMO_TRUSTED_PROXY:-127.0.0.1/32} 1;"
 
 services:
   nginx:
@@ -31,6 +37,9 @@ services:
     volumes:
       # Same target as the base file's nginx.conf mount: this one replaces it.
       - ./deploy/demo/nginx.demo.conf:/etc/nginx/nginx.conf:ro,z
+    configs:
+      - source: demo_trusted_proxy
+        target: /etc/nginx/demo-trusted-proxy.conf
     tmpfs: [/var/cache/nginx, /var/run, /tmp]
 
   react-frontend:

@@ -1,10 +1,14 @@
 # Traefik dynamic file for the hosted demo (DEMO-SPEC §1-§3).
-# Render with envsubst, restricted to the three placeholders:
+# Render with envsubst, restricted to the four placeholders:
 #   HOSTNAME=demo.example.org BACKEND_URL=http://demo-host.example:8190 EDGE_CHAIN=public-chain@file \
-#     envsubst '${HOSTNAME} ${BACKEND_URL} ${EDGE_CHAIN}' < traefik-catallax-demo.yml.tmpl > catallax-demo.yml
+#   CLOUDFLARED_SOURCE=203.0.113.10/32 \
+#     envsubst '${HOSTNAME} ${BACKEND_URL} ${EDGE_CHAIN} ${CLOUDFLARED_SOURCE}' < traefik-catallax-demo.yml.tmpl > catallax-demo.yml
 #   HOSTNAME    public host name of the demo
 #   BACKEND_URL URL of the demo nginx (LAN address + DEMO_PORT); never a public address
 #   EDGE_CHAIN  name of your existing middleware chain (security headers, HSTS, CrowdSec)
+#   CLOUDFLARED_SOURCE  CIDR of the cloudflared connector's source address as Traefik sees it.
+#               Only that peer may use these routers (ipAllowList), so Cf-Connecting-Ip can
+#               only have been set by Cloudflare.
 #
 # Three routers on one host. Higher priority wins:
 #   30  /api/*  GET|HEAD|OPTIONS   -> backend, API rate limit
@@ -19,19 +23,23 @@ http:
       rule: "Host(`${HOSTNAME}`) && PathPrefix(`/api/`) && (Method(`GET`) || Method(`HEAD`) || Method(`OPTIONS`))"
       priority: 30
       service: catallax-demo
-      middlewares: ["catallax-demo-ratelimit-api", "${EDGE_CHAIN}"]
+      middlewares: ["catallax-demo-cloudflared-only", "catallax-demo-ratelimit-api", "${EDGE_CHAIN}"]
     catallax-demo-static:
       rule: "Host(`${HOSTNAME}`) && (Method(`GET`) || Method(`HEAD`) || Method(`OPTIONS`))"
       priority: 20
       service: catallax-demo
-      middlewares: ["catallax-demo-ratelimit-static", "${EDGE_CHAIN}"]
+      middlewares: ["catallax-demo-cloudflared-only", "catallax-demo-ratelimit-static", "${EDGE_CHAIN}"]
     catallax-demo-405:
       rule: "Host(`${HOSTNAME}`)"
       priority: 1
       service: catallax-demo
-      middlewares: ["catallax-demo-to-405", "${EDGE_CHAIN}"]
+      middlewares: ["catallax-demo-cloudflared-only", "catallax-demo-to-405", "${EDGE_CHAIN}"]
 
   middlewares:
+    catallax-demo-cloudflared-only:
+      ipAllowList:
+        sourceRange:
+          - "${CLOUDFLARED_SOURCE}"
     catallax-demo-ratelimit-api:
       rateLimit:
         average: 10

@@ -42,7 +42,15 @@ trap cleanup EXIT
 
 "$DC" down
 # Only the two stateful volumes; images and the rest are untouched.
-docker volume rm catallax-demo_postgres-data catallax-demo_redis-data 2>/dev/null || true
+# A volume that never existed is fine; one that survives `rm` is a failed wipe
+# (the trap then takes the stack down).
+for vol in catallax-demo_postgres-data catallax-demo_redis-data; do
+  docker volume rm "$vol" >/dev/null 2>&1 || true
+  if docker volume inspect "$vol" >/dev/null 2>&1; then
+    echo "reset-demo: volume $vol still exists after rm; wipe failed" >&2
+    exit 1
+  fi
+done
 
 "$DC" up -d --wait
 

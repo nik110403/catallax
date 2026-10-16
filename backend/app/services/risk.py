@@ -25,6 +25,7 @@ import json
 import logging
 import math
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -248,18 +249,28 @@ class RiskEngine:
             return {"price_symbol": to_yahoo_symbol(sym, self._settings, crypto=True), "source": "yfinance", "currency": "USD", "currency_source": "inferred-default", "native_yahoo_ticker": True}
         return {"price_symbol": sym, "source": "yfinance", "currency": "USD", "currency_source": "inferred-default"}
 
+    def _adapter_for(self, source: str, asset_class: str | bool | None, native_yahoo_ticker: bool):  # noqa: ANN202
+        hint = asset_class if isinstance(asset_class, bool) else crypto_hint(asset_class)
+        if source == "yfinance":
+            return YFinanceAdapter(self._redis, self._settings, crypto=hint, native_ticker=native_yahoo_ticker)
+        return build_adapter(source, self._redis, self._settings)
+
+    def history_targets(self, assets: list[tuple[str, str]]) -> list[tuple[Any, str]]:
+        """[(adapter, price_symbol)] this lens would read daily bars through for
+        `assets` = [(symbol, asset_class)]: holdings, FX legs and both benchmarks.
+        The demo warm job stores bars through exactly these adapters, so the
+        `daily_bars` keys it writes are the keys `bundle()` reads."""
+        held = [SimpleNamespace(symbol=sym, asset_class=cls, value=0.0) for sym, cls in assets]
+        specs = self._series_specs(self._resolve_all(held))
+        return [(self._adapter_for(src, ac, native), ps) for _k, ps, src, ac, native in specs]
+
     # ── per-series fetch (own session, bounded concurrency) ──
     async def _fetch_one(
         self, price_symbol: str, source: str, asset_class: str | bool | None,
         native_yahoo_ticker: bool, start: datetime, end: datetime
     ) -> tuple[list[str], list[float], bool]:
         async with session_scope() as session:
-            hint = asset_class if isinstance(asset_class, bool) else crypto_hint(asset_class)
-            adapter = (
-                YFinanceAdapter(self._redis, self._settings, crypto=hint, native_ticker=native_yahoo_ticker)
-                if source == "yfinance"
-                else build_adapter(source, self._redis, self._settings)
-            )
+            adapter = self._adapter_for(source, asset_class, native_yahoo_ticker)
             env = await HistoryStore(session, self._redis, self._settings).get_daily(
                 adapter, price_symbol, start, end
             )
@@ -327,9 +338,7 @@ class RiskEngine:
             })
         return resolved
 
-    async def _fetch_series(self, resolved: list[dict[str, Any]], lookback: int) -> dict[str, Any]:
-        end = datetime.now(timezone.utc)
-        start = end - timedelta(days=lookback)
+    def _series_specs(self, resolved: list[dict[str, Any]]) -> list[tuple[str, str, str, str | bool | None, bool]]:
         specs: list[tuple[str, str, str, str | bool | None, bool]] = []
         for r in resolved:
             if not r["skip"] and r["price_symbol"]:
@@ -340,6 +349,12 @@ class RiskEngine:
                 specs.append((f"FX:{c}", _FX_SYMBOL[c], "yfinance", None, False))
         specs.append(("B:EQ", self._settings.risk_bench_equity, "yfinance", None, False))
         specs.append(("B:CR", self._settings.risk_bench_crypto, "yfinance", None, False))
+        return specs
+
+    async def _fetch_series(self, resolved: list[dict[str, Any]], lookback: int) -> dict[str, Any]:
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=lookback)
+        specs = self._series_specs(resolved)
         return await self._gather(specs, start, end)
 
     def _params(self, lookback: int) -> dict[str, Any]:

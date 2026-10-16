@@ -507,6 +507,23 @@ class SignalEngine:
             n_matured=n_m, n_pending=n_p, n_uncovered=n_u, rows=out,
         )
 
+    def _resolve_pairs(self, assets: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """[(symbol, asset_class)] -> sorted F0-priceable (price_symbol, source);
+        reuses the risk lens map."""
+        resolved: set[tuple[str, str]] = set()
+        for sym, cls in assets:
+            r = self._risk._resolve(sym, cls)
+            if r.get("skip") or not r.get("price_symbol"):
+                continue
+            resolved.add((r["price_symbol"], r["source"]))
+        return sorted(resolved)
+
+    def history_targets(self, assets: list[tuple[str, str]]) -> list[tuple[Any, str]]:
+        """[(adapter, price_symbol)] the reference seed reads daily bars through
+        (holdings + equity benchmark); the demo warm job stores these keys."""
+        pairs = self._resolve_pairs(assets) + [(self._settings.risk_bench_equity, "yfinance")]
+        return [(build_adapter(src, self._redis, self._settings), sym) for sym, src in sorted(set(pairs))]
+
     # ── reference seed (two real F0 factors over the WF book) ─
     async def seed(self, refresh: bool = False) -> EmitResult:
         if self._settings.demo_mode:
@@ -515,14 +532,7 @@ class SignalEngine:
             raise InvalidRequest("seeding disabled (SIGNAL_SEED_ENABLED=false)")
         s = self._settings
         holdings = await self._risk._wf.holdings()
-        # Resolve to F0-priceable (price_symbol, source); reuse the risk lens map.
-        resolved: list[tuple[str, str]] = []
-        for a in holdings.by_asset:
-            r = self._risk._resolve(a.symbol, a.asset_class)
-            if r.get("skip") or not r.get("price_symbol"):
-                continue
-            resolved.append((r["price_symbol"], r["source"]))
-        resolved = sorted(set(resolved))
+        resolved = self._resolve_pairs([(a.symbol, a.asset_class) for a in holdings.by_asset])
         if not resolved:
             raise InvalidRequest("no resolvable holdings to seed from")
 

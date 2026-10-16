@@ -226,7 +226,7 @@ async def test_warm_job_forces_live_mode(monkeypatch: pytest.MonkeyPatch) -> Non
 
     async def _fake_warm(redis, settings):  # noqa: ANN001
         seen["mode"] = settings.upstream_mode
-        return 0, 0
+        return 0, 0, 0
 
     class _R:
         @staticmethod
@@ -268,8 +268,8 @@ async def test_warm_backfills_daily_bars_in_live_mode(monkeypatch: pytest.Monkey
             self.settings = settings
 
         async def get_daily(self, adapter, symbol, start, end):  # noqa: ANN001
-            assert not is_cache_only(adapter._chain[0]._settings)
-            seen.append((symbol, adapter.asset_type, (end - start).days))
+            assert not is_cache_only(adapter._settings)
+            seen.append((symbol, adapter.name, (end - start).days))
 
     async def _noop(*a, **k):  # noqa: ANN002, ANN003
         return None
@@ -285,16 +285,16 @@ async def test_warm_backfills_daily_bars_in_live_mode(monkeypatch: pytest.Monkey
     monkeypatch.setattr(SentimentAdapter, "fear_greed", _noop)
     monkeypatch.setattr(FundamentalsAdapter, "statements", _noop)
 
-    ok, failed = await dw.warm(_FakeRedis(), get_settings())
-    assert failed == 0
-    assert [s for s, _, _ in seen] == ["AAPL", "BTC"]
+    ok, core_failed, optional_failed = await dw.warm(_FakeRedis(), get_settings())
+    assert (core_failed, optional_failed) == (0, 0)
+    assert {(s, src) for s, src, _ in seen} >= {("AAPL", "yfinance"), ("BTC-USD", "yfinance"), ("EURUSD=X", "yfinance"), ("^GSPC", "yfinance")}
     assert {d for _, _, d in seen} == {dw.HISTORY_DAYS}
     monkeypatch.delenv("DEMO_WARM_SYMBOLS", raising=False)
     monkeypatch.delenv("UPSTREAM_MODE", raising=False)
     get_settings.cache_clear()
 
 
-async def test_warm_exit_status_reflects_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_warm_exit_status_reflects_core_failures_only(monkeypatch: pytest.MonkeyPatch) -> None:
     import app.demo_warm as dw
 
     class _R:
@@ -309,10 +309,109 @@ async def test_warm_exit_status_reflects_failures(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(dw, "Redis", _R)
     monkeypatch.setattr(dw, "init_engine", lambda: None)
     monkeypatch.setattr(dw, "dispose_engine", _dispose)
-    for failed, want in ((0, 0), (2, 1)):
-        async def _fake_warm(redis, settings, failed=failed):  # noqa: ANN001
-            return 5, failed
+    for core, optional, want in ((0, 0, 0), (0, 3, 0), (2, 0, 1), (1, 3, 1)):
+        async def _fake_warm(redis, settings, core=core, optional=optional):  # noqa: ANN001
+            return 5, core, optional
 
         monkeypatch.setattr(dw, "warm", _fake_warm)
         assert await dw._main() == want
     get_settings.cache_clear()
+
+
+async def test_warm_classifies_step_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fundamentals/boards failing is expected (ETFs) and must not fail the unit;
+    a failing quote or daily-bar series must."""
+    from contextlib import asynccontextmanager
+
+    import app.demo_warm as dw
+
+    monkeypatch.setenv("UPSTREAM_MODE", "live")
+    monkeypatch.setenv("DEMO_WARM_SYMBOLS", "AAPL")
+    get_settings.cache_clear()
+    bars_fail = {"on": False}
+
+    @asynccontextmanager
+    async def _scope():
+        yield object()
+
+    class _Store:
+        def __init__(self, db, redis, settings) -> None:  # noqa: ANN001
+            pass
+
+        async def get_daily(self, adapter, symbol, start, end):  # noqa: ANN001
+            if bars_fail["on"]:
+                raise RuntimeError("no bars")
+
+    async def _noop(*a, **k):  # noqa: ANN002, ANN003
+        return None
+
+    async def _boom(*a, **k):  # noqa: ANN002, ANN003
+        raise RuntimeError("expected: no fundamentals for this instrument")
+
+    monkeypatch.setattr(dw, "session_scope", _scope)
+    monkeypatch.setattr(dw, "HistoryStore", _Store)
+    for name in ("get_overview", "get_quakes"):
+        monkeypatch.setattr(markets, name, _noop)
+    monkeypatch.setattr(news, "get_news", _noop)
+    monkeypatch.setattr(dw.build_chain("equity", _FakeRedis(), get_settings()).__class__, "get_quote", _noop)
+    monkeypatch.setattr(ShillerAdapter, "cape", _boom)
+    monkeypatch.setattr(BreadthAdapter, "diary", _noop)
+    monkeypatch.setattr(SentimentAdapter, "fear_greed", _noop)
+    monkeypatch.setattr(FundamentalsAdapter, "statements", _boom)
+
+    ok, core, optional = await dw.warm(_FakeRedis(), get_settings())
+    assert (core, optional) == (0, 2) and ok > 0
+    bars_fail["on"] = True
+    _ok, core, optional = await dw.warm(_FakeRedis(), get_settings())
+    assert core > 0 and optional == 2
+    monkeypatch.delenv("DEMO_WARM_SYMBOLS", raising=False)
+    monkeypatch.delenv("UPSTREAM_MODE", raising=False)
+    get_settings.cache_clear()
+
+
+async def test_warm_writes_every_key_risk_and_signals_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """For the demo persona, each (symbol, source) key the risk lens and the
+    signal engine would read from daily_bars is a key the warm writes."""
+    import app.demo_warm as dw
+    from app.services.demo import WF_ASSETS
+    from app.services.risk import RiskEngine
+    from app.services.signals import SignalEngine
+
+    monkeypatch.delenv("DEMO_WARM_SYMBOLS", raising=False)
+    get_settings.cache_clear()
+    s = get_settings()
+    r = _FakeRedis()
+    assets = [(a.symbol, a.asset_class) for a in WF_ASSETS]
+
+    def keys(targets):  # noqa: ANN001
+        return {(a.history_symbol(sym.upper()).upper(), a.name) for a, sym in targets}
+
+    warmed = keys(dw.history_targets(r, s, dw.warm_symbols(s)))
+    assert keys(RiskEngine(r, s).history_targets(assets)) <= warmed
+    assert keys(SignalEngine(r, s).history_targets(assets)) <= warmed
+    # The previously missing series: crypto under its Yahoo ticker, FX and benchmarks.
+    assert {("BTC-USD", "yfinance"), ("ETH-USD", "yfinance"), ("EURUSD=X", "yfinance"), ("^GSPC", "yfinance")} <= warmed
+    assert not any(src == "coingecko" for _, src in warmed)
+    get_settings.cache_clear()
+
+
+async def test_coingecko_history_request_capped_at_365_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The free CoinGecko OHLC endpoint only serves the last 365 days."""
+    from datetime import datetime, timedelta, timezone
+
+    get_settings.cache_clear()
+    adapter = CoinGeckoAdapter(_FakeRedis(), get_settings())
+    asked: dict[str, str] = {}
+
+    async def _resolve_id(symbol):  # noqa: ANN001
+        return "bitcoin"
+
+    async def _get(path, params):  # noqa: ANN001
+        asked.update(params)
+        return []
+
+    monkeypatch.setattr(adapter, "_resolve_id", _resolve_id)
+    monkeypatch.setattr(adapter, "_get", _get)
+    end = datetime.now(timezone.utc)
+    await adapter._fetch_history("BTC", end - timedelta(days=730), end, "1d")
+    assert asked["days"] == "365"
