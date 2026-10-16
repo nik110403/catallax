@@ -232,6 +232,8 @@ def test_preflight_allows_exactly_the_read_only_handoff_bind_on_demo_warm(tmp_pa
     ("srv itself nested", _warm_with([{**_HANDOFF, "source": "/srv/a/b"}])),
     ("unexpected option", _warm_with([{**_HANDOFF, "bind": {"propagation": "rshared"}}])),
     ("unexpected key", _warm_with([{**_HANDOFF, "volume": {"nocopy": True}}])),
+    ("other srv dir", _warm_with([{**_HANDOFF, "source": "/srv/other"}])),
+    ("trailing slash", _warm_with([{**_HANDOFF, "source": "/srv/catallax-handoff/"}])),
     ("two handoff binds", _warm_with([_HANDOFF, {**_HANDOFF, "source": "/srv/other"}])),
     ("on the backend", None),
     ("on another service", _warm_with([_HANDOFF], name="redis")),

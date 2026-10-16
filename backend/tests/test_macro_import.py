@@ -157,6 +157,24 @@ async def test_old_file_warns_but_imports(tmp_path: Path, caplog: pytest.LogCapt
     assert cal.stale
 
 
+async def test_exporter_stale_keys_only_land_in_stale_copy(tmp_path: Path) -> None:
+    r = _Redis()
+    path = Path(_file(tmp_path, {"macro:calendar": GOOD["macro:calendar"], "macro:yc:US": GOOD["macro:yc:US"]}))
+    doc = json.loads(path.read_text())
+    doc["entries_stale"] = ["macro:calendar", 7]
+    path.write_text(json.dumps(doc))
+    assert await import_macro(r, 60, str(path)) == 2
+    assert "macro:calendar" not in r.kv and "macro:calendar:stale" in r.kv
+    assert "macro:yc:US" in r.kv and "macro:yc:US:stale" in r.kv
+
+
+@pytest.mark.parametrize("ahead,fresh", [(timedelta(minutes=30), True), (timedelta(hours=2), False)])
+async def test_future_generated_at_is_old(tmp_path: Path, ahead: timedelta, fresh: bool) -> None:
+    r = _Redis()
+    await import_macro(r, 60, _file(tmp_path, GOOD, age=-ahead))
+    assert ("macro:yc:US" in r.kv) is fresh and "macro:yc:US:stale" in r.kv
+
+
 async def test_deep_json_and_bad_ttl_do_not_crash(tmp_path: Path) -> None:
     r = _Redis()
     deep = tmp_path / "deep.json"

@@ -26,6 +26,7 @@ logger = logging.getLogger("catallax.macro_import")
 MAX_BYTES = 5 * 1024 * 1024
 MAX_ENTRIES = 500
 MAX_AGE = timedelta(hours=48)
+MAX_FUTURE = timedelta(hours=1)  # clock-skew allowance; a later generated_at is untrustworthy
 
 KEY_RE = re.compile(r"macro:(yc:(US|EU)|rates:US|indicators|calendar|series:[A-Za-z0-9._]{1,64}:(toya|level))")
 
@@ -75,12 +76,20 @@ async def import_macro(redis: Any, ttl: int, path: str | None) -> int:
         gen = datetime.fromisoformat(str(doc.get("generated_at")).replace("Z", "+00:00"))
         if gen.tzinfo is None:
             gen = gen.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) - gen > MAX_AGE:
+        delta = datetime.now(timezone.utc) - gen
+        if delta > MAX_AGE:
             old = True
             logger.warning("macro import: handoff is stale (generated_at %s, over 48h old), stale copies only", gen.isoformat())
+        elif -delta > MAX_FUTURE:
+            old = True
+            logger.warning("macro import: generated_at %s is in the future, stale copies only", gen.isoformat())
     except ValueError:
         old = True
         logger.warning("macro import: generated_at missing or invalid, age unknown, stale copies only")
+
+    # Keys the exporter could only read from KEY:stale: never promote them to the fresh key.
+    raw_stale = doc.get("entries_stale")
+    stale_keys = {k for k in raw_stale if isinstance(k, str)} if isinstance(raw_stale, list) else set()
 
     written = 0
     for key, value in entries.items():
@@ -97,7 +106,7 @@ async def import_macro(redis: Any, ttl: int, path: str | None) -> int:
             logger.warning("macro import: %s is empty, skipped", key)
             continue
         payload = data.model_dump_json()
-        if not old and ttl > 0:  # an old export must show the UI's stale label, never pass as fresh
+        if not old and key not in stale_keys and ttl > 0:  # an old export must show the UI's stale label, never pass as fresh
             await redis.set(key, payload, ex=ttl)
         await redis.set(f"{key}:stale", payload, ex=MacroAdapter._STALE_TTL)
         written += 1
