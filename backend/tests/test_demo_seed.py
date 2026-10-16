@@ -30,8 +30,66 @@ TODAY = date(2026, 10, 16)
 # ── pure ────────────────────────────────────────────────────────
 def test_demo_empty_reads_flag() -> None:
     assert _settings(demo_mode=True).demo_empty_reads is True
-    assert _settings(demo_mode=True, demo_readonly=True).demo_empty_reads is False
+    # DEMO_READONLY is only a write gate: it never opens the database reads.
+    assert _settings(demo_mode=True, demo_readonly=True).demo_empty_reads is True
+    assert _settings(demo_mode=True, demo_sample_reads=True).demo_empty_reads is False
     assert _settings().demo_empty_reads is False
+
+
+async def test_readonly_without_sample_reads_still_returns_empty() -> None:
+    """No DB touched: the gate short-circuits before any query."""
+    from app.services.backtest import BacktestService
+    from app.services.algo import AlgoService
+    s = _settings(demo_mode=True, demo_readonly=True)
+    assert (await BacktestService(object(), s).list()).jobs == []
+    assert await AlgoService(object(), s).list_orders() == []
+
+
+class _Stop(Exception):
+    pass
+
+
+class _KeyRedis:
+    def __init__(self) -> None:
+        self.keys: list[str] = []
+
+    async def get(self, key):
+        self.keys.append(key)
+        raise _Stop
+
+
+async def test_demo_grade_ignores_refresh_and_pins_horizon(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.signals import SignalEngine
+    s = _settings(demo_mode=True, demo_readonly=True, demo_sample_reads=True)
+    r = _KeyRedis()
+    eng = SignalEngine(r, s)
+
+    async def rows(_sid):
+        return [("2026-01-30", "AAPL", "yfinance", 1.0)]
+
+    async def sig(_sid):
+        return "sig"
+    monkeypatch.setattr(eng, "_load_rows", rows)
+    monkeypatch.setattr(eng, "_signature", sig)
+    with pytest.raises(_Stop):  # refresh=True would have skipped the cache read entirely
+        await eng.grade("xs_mom_252_21", horizon=5, quantiles=3, refresh=True)
+    assert r.keys and f":{s.signal_default_horizon_bars}:{s.signal_default_quantiles}:" in r.keys[0]
+
+
+@pytest.mark.parametrize("prefix", ["/api/v1/journal", "/api/v1/notes", "/api/v1/watchlist", "/api/v1/backtests",
+                                    "/api/v1/lab", "/api/v1/signals", "/api/v1/algo"])
+async def test_writes_still_403_with_sample_reads(monkeypatch: pytest.MonkeyPatch, prefix: str) -> None:
+    import app.auth as auth_module
+    from tests.test_demo_readonly import _Rec, _receive, _scope, _write_routes
+    monkeypatch.setattr(auth_module, "get_settings", lambda: _settings(
+        demo_mode=True, demo_readonly=True, demo_sample_reads=True))
+    app = create_app()
+    routes = [(m, p) for m, p in _write_routes() if p.startswith(prefix)]
+    assert routes, prefix
+    for method, path in routes:
+        rec = _Rec()
+        await app(_scope(method, path), _receive, rec)
+        assert rec.status == 403, (method, path)
 
 
 def test_blobs_validate_and_are_labelled_synthetic() -> None:
@@ -76,14 +134,31 @@ def test_no_private_hosts_in_seed_text() -> None:
         assert n["link"].startswith("https://example.com/") and n["lat"] is not None
 
 
-async def test_refuses_without_readonly(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(demo_seed, "get_settings", lambda: _settings(demo_readonly=False))
+@pytest.mark.parametrize("flags", [
+    {}, {"demo_readonly": True}, {"demo_mode": True, "demo_readonly": True},
+    {"demo_mode": True, "demo_sample_reads": True}, {"demo_readonly": True, "demo_sample_reads": True},
+])
+async def test_refuses_unless_all_three_flags(monkeypatch: pytest.MonkeyPatch, flags: dict) -> None:
+    monkeypatch.setattr(demo_seed, "get_settings", lambda: _settings(**flags))
     monkeypatch.setattr(demo_seed, "init_engine", lambda: pytest.fail("touched the DB"))
     assert await demo_seed._main() == 2
 
 
 # ── DB-backed (opt-in) ──────────────────────────────────────────
 needs_db = pytest.mark.skipif(os.environ.get("DEMO_SEED_TEST_DB") != "1", reason="DEMO_SEED_TEST_DB=1 (throwaway Postgres) not set")
+
+@needs_db
+async def test_seed_refuses_a_database_with_foreign_rows(db) -> None:
+    from app.db import session_scope
+    from app.models import WatchlistItem
+    async with session_scope() as s:
+        s.add(WatchlistItem(symbol="TSLA", sort_order=0))
+        await s.commit()
+    async with session_scope() as s:
+        with pytest.raises(demo_seed.ForeignRowsError):
+            await demo_seed.seed(s, get_settings())
+    assert (await _counts())["Backtest"] == 0  # nothing was written
+
 
 class _NoRedis:
     async def get(self, *a, **k): return None
@@ -107,7 +182,7 @@ async def db(monkeypatch: pytest.MonkeyPatch):
     import app.models as m
     from app.db import dispose_engine, init_engine, session_scope
     from sqlalchemy import delete
-    for k, v in (("DEMO_MODE", "true"), ("DEMO_READONLY", "true")):
+    for k, v in (("DEMO_MODE", "true"), ("DEMO_READONLY", "true"), ("DEMO_SAMPLE_READS", "true")):
         monkeypatch.setenv(k, v)
     get_settings.cache_clear()
     monkeypatch.setattr("app.redis._redis", _NoRedis())  # PaperBroker.mark -> failed quotes -> avg_cost
@@ -181,12 +256,14 @@ async def test_reads_serve_seed_under_readonly_and_empty_under_demo_alone(db, mo
     assert (await hit(f"/api/v1/lab/runs/{lab}/report"))["data"]["ic_series"]
 
     # DEMO_MODE alone (local demo seam): the DB is NOT served, same rows still present.
-    monkeypatch.setenv("DEMO_READONLY", "false")
-    get_settings.cache_clear()
-    for path, count in _READS.items():
-        if path.startswith("/api/v1/intel"):
-            continue  # news-intel is not gated
-        assert count(await hit(path)) == 0, path
+    for env in ("DEMO_SAMPLE_READS", "DEMO_READONLY"):  # sample reads off: empty, readonly or not
+        monkeypatch.setenv("DEMO_SAMPLE_READS", "false")
+        monkeypatch.setenv("DEMO_READONLY", "true" if env == "DEMO_SAMPLE_READS" else "false")
+        get_settings.cache_clear()
+        for path, count in _READS.items():
+            if path.startswith("/api/v1/intel"):
+                continue  # news-intel is not gated
+            assert count(await hit(path)) == 0, (env, path)
 
 
 @needs_db

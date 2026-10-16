@@ -30,7 +30,7 @@ def _svc(**kw: object) -> dict:
 def _render() -> dict:
     backend = _svc(environment={
         "DEMO_READONLY": "true", "UPSTREAM_MODE": "cache-only", "LLM_PROVIDER": "noop",
-        "DEMO_MODE": "true", "SHARE_PASSPHRASE": "", "DEMO_BIND_ADDR": LAN,
+        "DEMO_MODE": "true", "DEMO_SAMPLE_READS": "true", "SHARE_PASSPHRASE": "", "DEMO_BIND_ADDR": LAN,
     })
     return {
         "name": "catallax-demo",
@@ -127,6 +127,13 @@ def test_preflight_allowlists_the_demo_seed_service(tmp_path: Path) -> None:
     assert _run_preflight(tmp_path, render).returncode == 0
     render["services"]["not-a-demo-service"] = _svc()
     assert _run_preflight(tmp_path, render).returncode != 0
+
+
+def test_preflight_requires_demo_sample_reads_pinned(tmp_path: Path) -> None:
+    render = _render()
+    render["services"]["fastapi-backend"]["environment"]["DEMO_SAMPLE_READS"] = "false"
+    r = _run_preflight(tmp_path, render)
+    assert r.returncode != 0 and "DEMO_SAMPLE_READS" in r.stderr
 
 
 def test_preflight_template_content_must_be_exactly_the_trust_line(tmp_path: Path) -> None:

@@ -152,7 +152,7 @@ for sname, svc in services.items():
 # Required demo environment on the backend.
 be = (services.get("fastapi-backend") or {}).get("environment") or {}
 want = {"DEMO_READONLY": "true", "UPSTREAM_MODE": "cache-only", "LLM_PROVIDER": "noop",
-        "DEMO_MODE": "true"}
+        "DEMO_MODE": "true", "DEMO_SAMPLE_READS": "true"}
 for k, v in want.items():
     if str(be.get(k, "")).lower() != v:
         bad.append("fastapi-backend: %s=%r, expected %r" % (k, be.get(k), v))

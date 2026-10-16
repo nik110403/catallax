@@ -405,6 +405,11 @@ class SignalEngine:
         refresh: bool = False,
     ) -> tuple[SignalGrade, dict[str, Any]]:
         s = self._settings
+        if s.demo_readonly:
+            # Public demo: a visitor must not be able to force recomputes or fan out
+            # distinct (horizon, quantiles) cache keys.
+            horizon = quantiles = None
+            refresh = False
         h = int(horizon or s.signal_default_horizon_bars)
         q = int(quantiles or s.signal_default_quantiles)
         if h < 1 or q < 2:
@@ -452,6 +457,8 @@ class SignalEngine:
         self, horizon: int | None = None, quantiles: int | None = None
     ) -> Scoreboard:
         cat = await self.catalog()
+        if self._settings.demo_readonly:
+            horizon = quantiles = None  # see grade(): no caller-chosen cache keys in the demo
         h = int(horizon or self._settings.signal_default_horizon_bars)
         q = int(quantiles or self._settings.signal_default_quantiles)
         summaries: list[SignalGradeSummary] = []
@@ -487,6 +494,8 @@ class SignalEngine:
         self, signal_id: str, as_of: str, horizon: int | None = None
     ) -> CrossSection:
         """Auditable raw view of one decision date: the lookahead rule made visible."""
+        if self._settings.demo_readonly:
+            horizon = None
         h = int(horizon or self._settings.signal_default_horizon_bars)
         try:
             t = date.fromisoformat(as_of)

@@ -5,8 +5,9 @@ serves). It writes ORM rows straight into Postgres so every product tab has one 
 sample: 2 backtests, 1 lab factor study, 3 journal entries, 3 notes, 5 watchlist symbols,
 user signals, one filled paper order with its fill/position/snapshots, a few news-intel rows.
 
-Safety: it REFUSES to run unless `DEMO_READONLY=true` (the flag only the hosted demo sets),
-so it can never write sample rows into a private database. Everything is synthetic: prices,
+Safety: it REFUSES to run unless DEMO_MODE, DEMO_READONLY and DEMO_SAMPLE_READS are all true
+(only the hosted demo sets them) and it refuses when a seeded table holds rows that are not
+its own sample rows, so it can never write into (or on top of) a private database. Everything is synthetic: prices,
 curves and text are generated here or fixed sample text; links point at example.com.
 
 Idempotent: each product is written only when its marker row is absent
@@ -345,10 +346,42 @@ async def _insert(db: AsyncSession, model: Any, rows: list[dict[str, Any]]) -> N
         await db.execute(pg_insert(model).values(rows).on_conflict_do_nothing())
 
 
+class ForeignRowsError(RuntimeError):
+    """A seeded table holds rows the seed did not write: this is not a demo database."""
+
+
+async def check_demo_database(db: AsyncSession, markers: list[tuple[Any, Any]]) -> None:
+    """Every table must hold exactly its sample rows (or none): any other row means the
+    database is not a fresh/seeded demo one."""
+    for model, marker in markers:
+        total = (await db.execute(select(func.count()).select_from(model))).scalar_one()
+        own = (await db.execute(select(func.count()).select_from(model).where(marker))).scalar_one()
+        if total != own:
+            raise ForeignRowsError(f"{model.__tablename__} has {total - own} non-sample row(s)")
+
+
 async def seed(db: AsyncSession, settings: Settings, today: date | None = None) -> dict[str, int]:
     """Write every missing product; returns rows inserted per product (all 0 on a rerun)."""
     today = today or datetime.now(timezone.utc).date()
     done: dict[str, int] = {}
+    bts = [
+        build_backtest("demo: momentum, monthly, top quintile", "xs_mom_252_21", today, 11, False, 5, 0.0003, 0.010),
+        build_backtest("demo: low-vol, monthly, long-short", "xs_lowvol_63", today, 23, True, 3, 0.0002, 0.007),
+    ]
+    lab = build_factor_run(today)
+    journal, notes, news = build_journal(today), build_notes(today), build_news(today)
+    book = build_algo(today, float(settings.algo_starting_cash))["fill"]
+    await check_demo_database(db, [
+        (Backtest, Backtest.job_id.in_([b["job_id"] for b in bts])),
+        (LabRun, LabRun.job_id == lab["job_id"]),
+        (JournalEntry, JournalEntry.title.in_([j["title"] for j in journal])),
+        (Note, Note.slug.in_([n["slug"] for n in notes])),
+        (WatchlistItem, WatchlistItem.symbol.in_(WATCHLIST)),
+        (SignalRow, SignalRow.signal_id.in_(SIGNAL_IDS)),
+        (NewsIntelRow, NewsIntelRow.link.in_([n["link"] for n in news])),
+        (AlgoOrder, AlgoOrder.symbol == book["symbol"]),
+        (AlgoFill, AlgoFill.symbol == book["symbol"]),
+    ])
 
     async def product(label: str, model: Any, marker: Any, rows: list[dict[str, Any]]) -> None:
         if await _absent(db, model, marker):
@@ -357,21 +390,13 @@ async def seed(db: AsyncSession, settings: Settings, today: date | None = None) 
         else:
             done[label] = 0
 
-    bts = [
-        build_backtest("demo: momentum, monthly, top quintile", "xs_mom_252_21", today, 11, False, 5, 0.0003, 0.010),
-        build_backtest("demo: low-vol, monthly, long-short", "xs_lowvol_63", today, 23, True, 3, 0.0002, 0.007),
-    ]
     await product("backtests", Backtest, Backtest.job_id.in_([b["job_id"] for b in bts]), bts)
-    lab = build_factor_run(today)
     await product("lab_runs", LabRun, LabRun.job_id == lab["job_id"], [lab])
-    journal = build_journal(today)
     await product("journal", JournalEntry, JournalEntry.title.in_([j["title"] for j in journal]), journal)
-    notes = build_notes(today)
     await product("notes", Note, Note.slug.in_([n["slug"] for n in notes]), notes)
     wl = build_watchlist()
     await product("watchlist", WatchlistItem, WatchlistItem.symbol.in_(WATCHLIST), wl)
     await product("signals", SignalRow, SignalRow.signal_id.in_(SIGNAL_IDS), build_signals(today, settings))
-    news = build_news(today)
     await product("news_intel", NewsIntelRow, NewsIntelRow.link.in_([n["link"] for n in news]), news)
 
     # Paper book: a fill's order_id needs the inserted order id, so these go in one step.
@@ -392,14 +417,17 @@ async def seed(db: AsyncSession, settings: Settings, today: date | None = None) 
 
 async def _main() -> int:
     settings = get_settings()
-    if not settings.demo_readonly:
-        # The seed must never reach a private database: only the hosted demo sets this.
-        logger.error("demo_seed refused: DEMO_READONLY is not true")
+    if not (settings.demo_mode and settings.demo_readonly and settings.demo_sample_reads):
+        # The seed must never reach a private database: only the hosted demo sets all three.
+        logger.error("demo_seed refused: DEMO_MODE, DEMO_READONLY and DEMO_SAMPLE_READS must all be true")
         return 2
     init_engine()
     try:
         async with session_scope() as db:
             done = await seed(db, settings)
+    except ForeignRowsError as exc:
+        logger.error("demo_seed refused: %s (not a demo database)", exc)
+        return 3
     finally:
         await dispose_engine()
     logger.info("demo seed done: %s", done)

@@ -753,6 +753,11 @@ class Settings(BaseSettings):
     # Hosted public demo (deploy/demo/, DEMO-SPEC C7b). DEMO_READONLY=true makes
     # DemoReadOnlyMiddleware refuse every non-GET/HEAD/OPTIONS /api/v1/* request.
     demo_readonly: bool = False
+    # Opt-in, pinned only in deploy/demo/compose.demo.yml: with DEMO_MODE the backtest/lab/
+    # journal/notes/algo/signals/watchlist GET routes read the seeded database (app.demo_seed)
+    # instead of returning their hard-coded empty result. Independent of DEMO_READONLY, which
+    # stays purely a write gate.
+    demo_sample_reads: bool = False
     # "cache-only": a cache miss never triggers an outbound fetch (stale or empty
     # data is served instead); see app/upstream.py. `python -m app.demo_warm`
     # overrides this to "live" and is the only upstream caller on the demo.
@@ -790,10 +795,10 @@ class Settings(BaseSettings):
     @property
     def demo_empty_reads(self) -> bool:
         """DEMO_MODE read gates (backtest/lab/journal/notes/algo/signals/watchlist)
-        return a hard-coded empty result. The hosted read-only demo (DEMO_READONLY)
-        instead serves the synthetic rows `app.demo_seed` wrote; writes stay refused
-        by DemoReadOnlyMiddleware either way."""
-        return self.demo_mode and not self.demo_readonly
+        return a hard-coded empty result unless DEMO_SAMPLE_READS opts in to serving
+        the synthetic rows `app.demo_seed` wrote. Writes stay refused by
+        DemoReadOnlyMiddleware either way."""
+        return self.demo_mode and not self.demo_sample_reads
 
     @property
     def news_feed_urls(self) -> list[str]:

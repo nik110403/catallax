@@ -62,18 +62,21 @@ for it (`service_completed_successfully`). Because the reset wipes the database
 and then runs `up --wait`, the seed is restored nightly with no extra step. It
 writes ORM rows directly (never through a writable API), validates the JSON
 blobs with `BacktestReport` / `FactorReport`, dates rows relative to today, is
-idempotent, and refuses to run unless `DEMO_READONLY=true`.
+idempotent, and refuses to run unless `DEMO_MODE`, `DEMO_READONLY` and `DEMO_SAMPLE_READS` are all true and the seeded tables hold nothing but its own rows (so it cannot touch a private database).
 
 Seeded (all obviously synthetic; news links point at example.com): 2 backtests,
 1 lab factor study, 3 journal entries, 3 notes, 5 watchlist symbols, user signals
 (two signal ids x month-end dates x persona symbols the warm job fetches bars for;
 graded at read time once warm has stored the bars), news-intel rows with
 coordinates, and one filled paper order with its fill, position and account
-snapshots whose cash reconciles exactly. Under `DEMO_MODE` + `DEMO_READONLY`
+snapshots whose cash reconciles exactly. Under `DEMO_MODE` + `DEMO_SAMPLE_READS`
+(pinned in `compose.demo.yml` and checked by the preflight; `DEMO_READONLY` stays a pure write gate)
 the backtest, lab, journal, notes, algo, signals and watchlist GET routes read
-this data instead of returning their hard-coded empty result (`DEMO_MODE` alone,
+this data instead of returning their hard-coded empty result (`DEMO_MODE` without `DEMO_SAMPLE_READS`,
 the local demo, still returns empty). Writes stay refused by the middleware and
 the edge.
+
+In the demo, signal grades ignore `refresh` and pin horizon/quantiles to the defaults, and Redis is capped at 48 MB with `allkeys-lru`, so visitors cannot force recomputes or grow the cache.
 
 Still empty: report narration (the demo report path is synthetic and needs a
 rewrite, not rows), the PDF (404 in demo), algo strategies, and anything a visitor
